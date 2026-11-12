@@ -1,0 +1,23 @@
+{
+  "name": "rain-or-gains",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "migrate": "wrangler d1 migrations apply rain-or-gains --remote",
+    "export": "node scripts/export.mjs",
+    "tail": "wrangler tail",
+    "types": "wrangler types --strict-vars=false",
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
+    "wrangler": "^4.161.0"
+  },
+  "allowScripts": {
+    "workerd@1.20261110.1": true,
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "rain-or-gains",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-12",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Every 5 min: sample occupancy. Daily 03:07 UTC: snapshot the historical profile (must match PROFILE_CRON).
+  "triggers": { "crons": ["*/5 * * * *", "7 3 * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rain-or-gains",
+      "database_id": "aa0c0832-481e-44eb-94b0-4ece65f1b848",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    // FitX branchIds. 82 = Berlin-East Side Mall.
+    "STUDIOS": [82]
+  }
+}
