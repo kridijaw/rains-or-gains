@@ -46,11 +46,13 @@ function localTime(ts) {
 
 const bump = (h, center, width, height) => height * Math.exp(-(((h - center) / width) ** 2));
 
+const closed = (h) => h < 6 || h >= 23;
+
 function shape(weekday, h) {
+  if (closed(h)) return 0;
   const weekend = weekday >= 5;
-  const base = h < 6 || h >= 23 ? 3 : 8;
-  if (weekend) return base + bump(h, 14, 3.2, 80);
-  return base + bump(h, 9, 1.6, 30) + bump(h, 18.5, 2.2, 100 + (weekday === 0 ? 15 : 0));
+  if (weekend) return 8 + bump(h, 14, 3.2, 80);
+  return 8 + bump(h, 9, 1.6, 30) + bump(h, 18.5, 2.2, 100 + (weekday === 0 ? 15 : 0));
 }
 
 const term = (p) => (p < 30 ? "low" : p < 60 ? "medium" : p < 90 ? "high" : "full");
@@ -65,7 +67,7 @@ for (let ts = start; ts <= end; ts += SLOT) {
     continue;
   }
   const { weekday, hour } = localTime(ts);
-  const p = Math.max(0, Math.round(shape(weekday, hour) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
+  const p = closed(hour) ? 0 : Math.max(0, Math.round(shape(weekday, hour) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
   rows.push(`(${BRANCH}, ${ts}, ${p}, ${sqlText(term(p))}, 'capacity', 0, 2, NULL)`);
 }
 
