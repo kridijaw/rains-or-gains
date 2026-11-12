@@ -46,13 +46,11 @@ function localTime(ts) {
 
 const bump = (h, center, width, height) => height * Math.exp(-(((h - center) / width) ** 2));
 
-const closed = (h) => h < 6 || h >= 23;
-
+// Open 24/7 like the real studio: a thin floor at night, never zero.
 function shape(weekday, h) {
-  if (closed(h)) return 0;
-  const weekend = weekday >= 5;
-  if (weekend) return 8 + bump(h, 14, 3.2, 80);
-  return 8 + bump(h, 9, 1.6, 30) + bump(h, 18.5, 2.2, 100 + (weekday === 0 ? 15 : 0));
+  const base = h < 6 || h >= 23 ? 3 : 8;
+  if (weekday >= 5) return base + bump(h, 14, 3.2, 80);
+  return base + bump(h, 9, 1.6, 30) + bump(h, 18.5, 2.2, 100 + (weekday === 0 ? 15 : 0));
 }
 
 const term = (p) => (p < 30 ? "low" : p < 60 ? "medium" : p < 90 ? "high" : "full");
@@ -67,7 +65,7 @@ for (let ts = start; ts <= end; ts += SLOT) {
     continue;
   }
   const { weekday, hour } = localTime(ts);
-  const p = closed(hour) ? 0 : Math.max(0, Math.round(shape(weekday, hour) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
+  const p = Math.max(1, Math.round(shape(weekday, hour) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
   rows.push(`(${BRANCH}, ${ts}, ${p}, ${sqlText(term(p))}, 'capacity', 0, 2, NULL)`);
 }
 
@@ -76,7 +74,8 @@ const profile = Array.from({ length: 7 }, (_, d) =>
 );
 const now = Math.floor(Date.now() / 1000);
 
-const statements = [];
+// Replace earlier synthetic rows so a change to shape() takes effect on reseed.
+const statements = [`DELETE FROM samples WHERE branch_id = ${BRANCH};`, `DELETE FROM profiles WHERE branch_id = ${BRANCH};`];
 for (let i = 0; i < rows.length; i += 200) {
   statements.push(
     `INSERT OR IGNORE INTO samples (branch_id, ts, percentage, term, source, hidden, status, error) VALUES\n${rows
@@ -87,9 +86,7 @@ for (let i = 0; i < rows.length; i += 200) {
 statements.push(
   `INSERT OR IGNORE INTO studios (branch_id, name, alias, lat, lon, updated_at)
    VALUES (${BRANCH}, 'Berlin-East Side Mall', 'berlin-east-side-mall', 52.5064596, 13.4460136, ${now});`,
-  `INSERT INTO profiles (branch_id, fetched_at, data)
-   SELECT ${BRANCH}, ${now}, ${sqlText(JSON.stringify(profile))}
-   WHERE NOT EXISTS (SELECT 1 FROM profiles WHERE branch_id = ${BRANCH});`,
+  `INSERT INTO profiles (branch_id, fetched_at, data) VALUES (${BRANCH}, ${now}, ${sqlText(JSON.stringify(profile))});`,
   "DELETE FROM hourly;",
   `INSERT INTO hourly (branch_id, hour_ts, avg_pct, max_pct, n)
    SELECT branch_id, ts - ts % 3600, avg(percentage), max(percentage), count(percentage)
