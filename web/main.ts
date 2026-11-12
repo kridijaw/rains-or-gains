@@ -94,6 +94,14 @@ function updateSticky(summary: NowSummary | null, studio: Studio): void {
   );
 }
 
+// Swaps the text in place when the kind of status is unchanged, so redraws don't replay its entrance.
+function setStatus(node: HTMLElement | null): void {
+  const shown = nowStatus.firstElementChild;
+  nowStatus.hidden = !node;
+  if (node && shown?.className === node.className) shown.replaceChildren(...node.childNodes);
+  else nowStatus.replaceChildren(...(node ? [node] : []));
+}
+
 // Shows the sticky bar once the big number has scrolled out at the top.
 const heroWatcher = new IntersectionObserver(([entry]) => {
   sticky.classList.toggle("show", !entry.isIntersecting && entry.boundingClientRect.top < 0);
@@ -114,13 +122,11 @@ function draw(which: View[] = ALL, restart = false): void {
       if (view === "now") {
         nowUpdated.textContent = "";
         nowUpdated.classList.remove("live");
-        nowStatus.replaceChildren();
-        nowStatus.hidden = true;
         if (typeof s.nowBody === "string") {
           root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
+          setStatus(null);
           document.title = baseTitle;
-        }
-        else if (s.nowBody) {
+        } else if (s.nowBody) {
           enter(root, view);
           const summary = renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) });
           const value = summary?.value ?? null;
@@ -129,8 +135,7 @@ function draw(which: View[] = ALL, restart = false): void {
           shownValue = value;
           nowUpdated.textContent = summary?.updated ?? "";
           nowUpdated.classList.toggle("live", !!summary?.live);
-          nowStatus.replaceChildren(...(summary?.status ? [summary.status] : []));
-          nowStatus.hidden = !summary?.status;
+          setStatus(summary?.status ?? null);
           updateSticky(summary, s.studio);
           const hero = root.querySelector(".hero");
           heroWatcher.disconnect();
