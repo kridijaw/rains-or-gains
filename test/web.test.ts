@@ -317,10 +317,12 @@ describe("series", () => {
       (v) => (v < 2 ? "2026-10-03" : "2026-10-04"),
     );
     expect(stats).toEqual([
-      { group: "low", n: 3, days: 2, mean: 2, median: 2 },
-      { group: "high", n: 1, days: 1, mean: 10, median: 10 },
-      { group: "none", n: 0, days: 0, mean: null, median: null },
+      { group: "low", n: 3, days: 2, mean: 2, median: 2, q1: 1.5, q3: 2.5 },
+      { group: "high", n: 1, days: 1, mean: 10, median: 10, q1: 10, q3: 10 },
+      { group: "none", n: 0, days: 0, mean: null, median: null, q1: null, q3: null },
     ]);
+    const even = groupStats([4, 1, 3, 2], ["all"] as const, () => "all", (v) => v, () => "2026-10-03");
+    expect(even[0]).toMatchObject({ median: 2.5, q1: 1.75, q3: 3.25 });
   });
 
   describe("outlook", () => {

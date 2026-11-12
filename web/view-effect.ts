@@ -36,23 +36,30 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
     return group === null ? [] : [{ ...r, group }];
   });
   const medians = stats.filter((s) => s.median !== null);
+  // Hundreds of ticks at a fixed opacity merge into a solid block; thin them out as the group grows.
+  const tickOpacity = (g: G) => Math.min(0.5, Math.max(0.05, 2 / Math.sqrt(byGroup.get(g)?.n || 1)));
+  const narrow = width / stats.length < 150;
+  const count = (s: GroupStats<string> | undefined) => (s && narrow ? `${s.n} h, ${s.days} d` : countLabel(s));
   return Plot.plot({
     width,
     height: 220,
     ...MARGIN,
     marginBottom: 36,
-    x: { domain: stats.map((s) => s.group), tickFormat: (g: G) => `${g}\n${countLabel(byGroup.get(g))}`, tickSize: 0, label: null, padding: 0.3 },
+    x: { domain: stats.map((s) => s.group), tickFormat: (g: G) => `${g}\n${count(byGroup.get(g))}`, tickSize: 0, label: null, padding: 0.3 },
     y: residualAxis,
     marks: [
       Plot.ruleY([0], { stroke: c.baseline }),
-      Plot.tickY(data, { x: "group", y: "residual", stroke: c.neutral, strokeOpacity: 0.35, strokeWidth: 1, className: "fade" }),
+      Plot.tickY(data, { x: "group", y: "residual", stroke: c.neutral, strokeOpacity: (d) => tickOpacity(d.group), strokeWidth: 1, className: "fade" }),
+      Plot.barY(medians, { x: "group", y1: "q1", y2: "q3", fill: c.neutral, fillOpacity: 0.12, stroke: c.muted, strokeWidth: 1.5, rx: 4, insetLeft: -6, insetRight: -6, className: "fade" }),
       Plot.tickY(medians, {
         x: "group",
         y: "median",
         stroke: c.text,
         strokeWidth: 3,
+        strokeLinecap: "round",
         className: "pop pop-late",
-        title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median, "%")}\nmean ${fmtSigned(s.mean, "%")}\n${countLabel(s)}`,
+        title: (s: GroupStats<G>) =>
+          `${s.group}\nmedian ${fmtSigned(s.median, "%")}\nmiddle half ${fmtSigned(s.q1, "%")} to ${fmtSigned(s.q3, "%")}\nmean ${fmtSigned(s.mean, "%")}\n${countLabel(s)}`,
         tip: true,
       }),
     ],
@@ -76,7 +83,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     return false;
   }
   const blocks: (HTMLElement | false)[] = [
-    message("Residual = hourly mean minus the usual value for that weekday and hour, as % of usual.", "chart-note"),
+    message("Residual = hourly mean minus the usual value for that weekday and hour, as % of usual.", "muted small"),
   ];
 
   const twoUp = width >= 760;
@@ -116,7 +123,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
               fill: "wet",
               symbol: "wet",
               r: 4,
-              fillOpacity: 0.75,
+              fillOpacity: (d: { wet: string }) => (d.wet === "Rain" ? 0.9 : 0.4),
               stroke: c.surface,
               strokeWidth: 1,
               className: "reveal",
@@ -157,7 +164,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     ),
   );
   blocks.push(pair);
-  blocks.push(message("Thin ticks are single hours; the bold tick is the median. Hours of one day move together, so the day count is the real sample size.", "muted small"));
+  blocks.push(message("Thin ticks are single hours, the shaded box holds the middle half, and the bold tick is the median. Hours of one day move together, so the day count is the real sample size.", "muted small"));
 
   const fmtRow = (s: GroupStats<string>) => [s.group, s.n, s.days, fmtSigned(s.mean, "%"), fmtSigned(s.median, "%")];
   blocks.push(

@@ -182,13 +182,16 @@ export interface GroupStats<G extends string> {
   days: number;
   mean: number | null;
   median: number | null;
+  q1: number | null;
+  q3: number | null;
 }
 
-const median = (values: number[]): number | null => {
-  if (values.length === 0) return null;
-  const s = [...values].sort((a, b) => a - b);
-  const mid = s.length >> 1;
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+/** Linear-interpolated quantile of an ascending array. */
+const quantile = (sorted: number[], p: number): number | null => {
+  if (sorted.length === 0) return null;
+  const i = (sorted.length - 1) * p;
+  const lo = Math.floor(i);
+  return sorted[lo] + (sorted[Math.min(lo + 1, sorted.length - 1)] - sorted[lo]) * (i - lo);
 };
 
 export function groupStats<T, G extends string>(
@@ -208,12 +211,15 @@ export function groupStats<T, G extends string>(
   }
   return groups.map((group) => {
     const { values, dates } = buckets.get(group) ?? { values: [], dates: new Set() };
+    const sorted = [...values].sort((a, b) => a - b);
     return {
       group,
       n: values.length,
       days: dates.size,
       mean: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
-      median: median(values),
+      median: quantile(sorted, 0.5),
+      q1: quantile(sorted, 0.25),
+      q3: quantile(sorted, 0.75),
     };
   });
 }

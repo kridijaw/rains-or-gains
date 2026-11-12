@@ -171,12 +171,6 @@ p {
   font-size: 0.85rem;
 }
 
-/* Matches Plot's legend titles, e.g. the heatmap's "Points, own minus FitX". */
-.chart-note {
-  font: 700 11px system-ui, sans-serif;
-  color: var(--muted);
-}
-
 .studio-picker {
   display: flex;
   gap: 0.4rem;
