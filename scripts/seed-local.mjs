@@ -1,5 +1,6 @@
-// Usage: npm run seed:local [-- --days 5]
+// Usage: npm run seed:local [-- --days 60]
 // Fills the LOCAL D1 database with synthetic samples for branch 82 and rebuilds the hourly rollup.
+// Occupancy rises in hours that really rained in Berlin (Open-Meteo), so the weather effect view has something to find.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +14,7 @@ if (process.argv.some((a) => a.startsWith("--remote"))) {
 const BRANCH = 82;
 const SLOT = 300;
 const daysArg = process.argv.indexOf("--days");
-const DAYS = daysArg > 0 ? Number(process.argv[daysArg + 1]) : 5;
+const DAYS = daysArg > 0 ? Number(process.argv[daysArg + 1]) : 60;
 if (!Number.isInteger(DAYS) || DAYS < 1 || DAYS > 400) {
   console.error("--days must be an integer between 1 and 400");
   process.exit(1);
@@ -53,11 +54,60 @@ function shape(weekday, h) {
   return base + bump(h, 9, 1.6, 30) + bump(h, 18.5, 2.2, 100 + (weekday === 0 ? 15 : 0));
 }
 
+const LAT = 52.5064596;
+const LON = 13.4460136;
+// Must match web/weather.ts: the dashboard has to see the same rain that shaped the samples.
+const ARCHIVE_LAG_DAYS = 6;
+
+const utcDate = (ts) => new Date(ts * 1000).toISOString().slice(0, 10);
+const dayTs = (date) => Date.parse(`${date}T00:00:00Z`) / 1000;
+const addDays = (date, n) => utcDate(dayTs(date) + n * 86400);
+
+/** Open-Meteo precipitation keyed by hour end (its value at h covers the hour before h). */
+async function fetchRain(from, to) {
+  const common = `latitude=${LAT}&longitude=${LON}&hourly=precipitation&timezone=UTC&timeformat=unixtime`;
+  const start = utcDate(from);
+  const end = utcDate(to);
+  const today = utcDate(Date.now() / 1000);
+  const lastArchive = addDays(today, -ARCHIVE_LAG_DAYS);
+  const urls = [];
+  if (start <= lastArchive)
+    urls.push(`https://archive-api.open-meteo.com/v1/archive?${common}&start_date=${start}&end_date=${end < lastArchive ? end : lastArchive}`);
+  if (end > lastArchive) {
+    const recentStart = start > lastArchive ? start : addDays(lastArchive, 1);
+    const pastDays = Math.round((dayTs(today) - dayTs(recentStart)) / 86400);
+    urls.push(`https://api.open-meteo.com/v1/forecast?${common}&past_days=${pastDays}&forecast_days=1`);
+  }
+  const rain = new Map();
+  for (const url of urls) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+    const { hourly } = await res.json();
+    hourly.time.forEach((t, i) => {
+      const mm = hourly.precipitation[i];
+      if (typeof mm === "number" && !rain.has(t)) rain.set(t, mm);
+    });
+  }
+  return rain;
+}
+
+// Rain pushes workouts indoors: +15% for a drizzle, up to +40% from about 1 mm per hour.
+const rainLift = (mm) => (mm > 0 ? 1 + Math.min(0.4, 0.15 + 0.25 * mm) : 1);
+
 const term = (p) => (p < 30 ? "low" : p < 60 ? "medium" : p < 90 ? "high" : "full");
 const sqlText = (s) => (s === null ? "NULL" : `'${String(s).replaceAll("'", "''")}'`);
 
 const end = Math.floor(Date.now() / 1000 / SLOT) * SLOT - SLOT;
 const start = end - DAYS * 86400;
+
+let rain = new Map();
+try {
+  rain = await fetchRain(start, end);
+} catch (err) {
+  console.warn(`No rain data (${err.message}); seeding without a weather effect.`);
+}
+const rainAt = (ts) => rain.get(ts - (ts % 3600) + 3600) ?? 0;
+
 const rows = [];
 for (let ts = start; ts <= end; ts += SLOT) {
   if (rand() < 0.01) {
@@ -65,7 +115,7 @@ for (let ts = start; ts <= end; ts += SLOT) {
     continue;
   }
   const { weekday, hour } = localTime(ts);
-  const p = Math.max(1, Math.round(shape(weekday, hour) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
+  const p = Math.max(1, Math.round(shape(weekday, hour) * rainLift(rainAt(ts)) * (0.9 + rand() * 0.2) + (rand() - 0.5) * 6));
   rows.push(`(${BRANCH}, ${ts}, ${p}, ${sqlText(term(p))}, 'capacity', 0, 2, NULL)`);
 }
 
@@ -102,4 +152,7 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+const wetHours = [...rain].filter(([t, mm]) => mm > 0 && t > start && t <= end + 3600);
+const wetDays = new Set(wetHours.map(([t]) => utcDate(t - 3600))).size;
 console.log(`seeded ${rows.length} samples for branch ${BRANCH} over ${DAYS} days (local only)`);
+console.log(`rain lifted ${wetHours.length} hours on ${wetDays} days`);

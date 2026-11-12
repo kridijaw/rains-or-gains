@@ -63,7 +63,7 @@ Served by the same Worker under `/api/*`; everything else is static assets from 
 
 `latest` is `{ts, percentage, term, hidden, status, error}` or `null`. In `samples`, hidden gauges have a null percentage. `since`, `from` and `to` must be hour-aligned (multiples of 3600). The edge cache is keyed on the parsed parameters, so extra query params do not bypass it. Invalid parameters return 400 with `{error}`.
 
-For local work, `npm run seed:local` applies migrations to the local D1 and fills it with a few days of synthetic samples for branch 82 (never touches the remote database).
+For local work, `npm run seed:local` applies migrations to the local D1 and fills it with 60 days (`-- --days N` to change) of synthetic samples for branch 82 (never touches the remote database). The synthetic gym is open 24/7 and gets busier in hours that really rained in Berlin, taken from the same Open-Meteo endpoints the dashboard uses, so the weather effect view has a known effect to find. Offline, it seeds without that effect.
 
 ## Analysis notes
 
