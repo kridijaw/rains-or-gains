@@ -58,3 +58,13 @@ npm run migrate && npm run deploy
 ```
 
 Then open <https://gym.kridi.dev>, check that the Now view shows live data, and check that a second `/api/now` request within a minute comes back with `cf-cache-status: HIT`.
+
+### Rate limiting
+
+The API is public, and the Workers request limit and D1 read limit are account-wide: running out of either stops the cron from logging until 00:00 UTC. A WAF rate limiting rule on the kridi.dev zone (Security > WAF > Rate limiting rules; the free plan allows one) blocks floods before they reach the Worker:
+
+- Expression: `(starts_with(http.request.uri.path, "/api/"))`. The free plan only allows the path field, so this also covers `kridi.dev/api/*`, which the main site does not use.
+- Counting characteristic: IP. Limit: 30 requests per 10 seconds.
+- Action: Block, for 10 seconds.
+
+A normal page load makes 3 API requests and an open tab about 13 an hour, so the limit only trips on scripted traffic.
