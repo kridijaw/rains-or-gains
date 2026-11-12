@@ -9,6 +9,7 @@ import { renderHeatmap, type HeatMode } from "./view-heatmap";
 import { renderNow, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
 import { renderWeek, type RangeDays } from "./view-week";
+import { themeToggle } from "./theme";
 import { getWeather, type WeatherHour } from "./weather";
 
 const HISTORY_DAYS = 90;
@@ -279,7 +280,6 @@ function watchLayout(): void {
     clearTimeout(timer);
     timer = window.setTimeout(() => draw(), 150);
   }).observe(document.querySelector("#views")!);
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => draw());
   setInterval(refreshNow, REFRESH_MS);
   document.addEventListener("visibilitychange", () => {
     if (state && Date.now() - state.refreshedAt > REFRESH_MS) void refreshNow();
@@ -287,6 +287,7 @@ function watchLayout(): void {
 }
 
 async function main(): Promise<void> {
+  themeToggle(document.querySelector<HTMLButtonElement>("#theme-toggle")!, () => draw());
   let studios: Studio[];
   try {
     studios = await getStudios();
