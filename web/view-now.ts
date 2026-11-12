@@ -33,6 +33,8 @@ export interface NowSummary {
   term: string | null;
   outlook: string | null;
   updated: string;
+  /** The latest sample is recent and valid. */
+  live: boolean;
   /** Stale, failed or hidden sample; shown under the page header. */
   status: HTMLElement | null;
 }
@@ -76,6 +78,7 @@ interface Today {
   outlook: Outlook | null;
   text: string | null;
   hours: OpenHours | null;
+  usualNow: number | null;
 }
 
 function today(input: NowInput): Today {
@@ -86,7 +89,7 @@ function today(input: NowInput): Today {
   const usual = typicalDay(model, weekday).map((t) => (t.value !== null && isComparable(t.source) ? t.value : null));
   const o = outlook(usual, hours, hourOfDay(now), cur?.value ?? null);
   const text = o && outlookText(o, cur?.value ?? null);
-  return { cur, outlook: o, text, hours };
+  return { cur, outlook: o, text, hours, usualNow: usual[Math.floor(hourOfDay(now))] ?? null };
 }
 
 function statusLine(kind: "warning" | "critical" | "info", label: string, text: string): HTMLElement {
@@ -115,6 +118,24 @@ function status({ now, body }: NowInput): HTMLElement | null {
   return null;
 }
 
+/** Horizontal gauge for the big number, with a tick for the usual value at this hour. */
+function meter(value: number, usual: number | null): HTMLElement {
+  const max = Math.max(100, value, usual ?? 0);
+  const fill = el("span", { className: "meter-fill" });
+  fill.style.setProperty("--v", String(value / max));
+  const node = el("div", { className: "meter" }, el("span", { className: "meter-track" }, fill));
+  let label = `${value}% now`;
+  if (usual !== null) {
+    const tick = el("span", { className: "meter-usual" }, el("span", { text: `usual ${fmtPct(usual)}` }));
+    tick.style.setProperty("--u", String(usual / max));
+    node.append(tick);
+    label += `, usually ${fmtPct(usual)} at this hour`;
+  }
+  node.setAttribute("role", "img");
+  node.setAttribute("aria-label", label);
+  return node;
+}
+
 function hero(input: NowInput, t0: Today): HTMLElement {
   const { now, body } = input;
   const f = freshness(body.latest, now);
@@ -133,6 +154,7 @@ function hero(input: NowInput, t0: Today): HTMLElement {
       t0.cur?.term && el("span", { className: "hero-term", text: t0.cur.term }),
     ),
   );
+  if (value !== null) parts.push(meter(value, t0.usualNow));
   if (value !== null && value > 100) parts.push(message("FitX's scale goes past 100%. Shown as reported.", "muted small"));
 
   return el("div", { className: "now-hero" }, ...parts);
@@ -174,6 +196,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const expected = t0.outlook?.expected ?? [];
   const ahead = expected.filter((e) => e.x > nowX);
   const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
+  const live = freshness(body.latest, now).state === "ok";
   const yMax = Math.max(100, ...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
 
   const tips = [
@@ -198,11 +221,22 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     marks: [
       Plot.ruleX(inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
       Plot.ruleY([0], { stroke: c.baseline }),
-      Plot.line(usualPts, { x: "x", y: "v", stroke: c.neutral, strokeWidth: 2 }),
-      Plot.line(expected, { x: "x", y: "v", stroke: c.occupancy, strokeWidth: 2, strokeDasharray: "4,4", strokeOpacity: 0.85 }),
-      Plot.line(shown, { x: "x", y: "p", stroke: c.occupancy, strokeWidth: 2 }),
-      pick && Plot.dot([pick], { x: (d) => d.hour + 0.5, y: "v", r: 4, fill: c.surface, stroke: c.occupancy, strokeWidth: 2 }),
-      last && Plot.dot([last], { x: "x", y: "p", r: 4, fill: c.occupancy, stroke: c.surface, strokeWidth: 2 }),
+      Plot.areaY(shown, { x: "x", y: "p", fill: c.occupancy, fillOpacity: 0.08, className: "reveal" }),
+      Plot.line(usualPts, { x: "x", y: "v", stroke: c.neutral, strokeWidth: 2, className: "fade" }),
+      Plot.line(expected, {
+        x: "x",
+        y: "v",
+        stroke: c.occupancy,
+        strokeWidth: 2,
+        strokeDasharray: "4,4",
+        strokeOpacity: 0.85,
+        className: "reveal reveal-late",
+      }),
+      Plot.line(shown, { x: "x", y: "p", stroke: c.occupancy, strokeWidth: 2, className: "reveal" }),
+      pick &&
+        Plot.dot([pick], { x: (d) => d.hour + 0.5, y: "v", r: 4, fill: c.surface, stroke: c.occupancy, strokeWidth: 2, className: "pop pop-late" }),
+      last && live ? Plot.dot([last], { x: "x", y: "p", r: 4, fill: c.occupancy, className: "pulse" }) : null,
+      last && Plot.dot([last], { x: "x", y: "p", r: 4, fill: c.occupancy, stroke: c.surface, strokeWidth: 2, className: "pop" }),
       last &&
         Plot.text([last], {
           x: "x",
@@ -214,6 +248,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
           fontWeight: 600,
           stroke: c.surface,
           strokeWidth: 3,
+          className: "pop",
         }),
       Plot.ruleX(tips, Plot.pointerX({ x: "x", stroke: c.faint })),
       Plot.tip(tips, Plot.pointerX({ x: "x", y: "y", title: "title" })),
@@ -238,8 +273,8 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
       x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
       y: { axis: null },
       marks: [
-        Plot.areaY(profilePts, { x: "x", y: "v", fill: c.neutral, fillOpacity: 0.15 }),
-        Plot.line(profilePts, { x: "x", y: "v", stroke: c.neutral, strokeWidth: 2 }),
+        Plot.areaY(profilePts, { x: "x", y: "v", fill: c.neutral, fillOpacity: 0.15, className: "reveal" }),
+        Plot.line(profilePts, { x: "x", y: "v", stroke: c.neutral, strokeWidth: 2, className: "reveal" }),
         Plot.ruleY([0], { stroke: c.baseline }),
       ],
     });
@@ -268,6 +303,13 @@ export function renderNow(root: HTMLElement, input: NowInput): NowSummary | null
   const t0 = today(input);
   root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...todayChart(input, t0))));
   return t0.cur
-    ? { value: t0.cur.value, term: t0.cur.term, outlook: t0.text, updated: updatedText(input, t0.cur), status: status(input) }
+    ? {
+        value: t0.cur.value,
+        term: t0.cur.term,
+        outlook: t0.text,
+        updated: updatedText(input, t0.cur),
+        live: freshness(input.body.latest, input.now).state === "ok",
+        status: status(input),
+      }
     : null;
 }

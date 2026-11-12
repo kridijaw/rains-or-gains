@@ -126,8 +126,8 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
         title: (h) => `${h.name}, ${fmtDate(h.x)}`,
       }),
       Plot.ruleY([0], { stroke: c.baseline }),
-      Plot.areaY(pts, { x: "mid", y: "typical", fill: c.occupancy, fillOpacity: 0.14, curve: "step" }),
-      Plot.line(pts, { x: "mid", y: "avg", stroke: c.occupancy, strokeWidth: days === 7 ? 2 : 1.5 }),
+      Plot.areaY(pts, { x: "mid", y: "typical", fill: c.occupancy, fillOpacity: 0.14, curve: "step", className: "fade" }),
+      Plot.line(pts, { x: "mid", y: "avg", stroke: c.occupancy, strokeWidth: days === 7 ? 2 : 1.5, className: "reveal" }),
       Plot.ruleX(withData, Plot.pointerX({ x: "mid", stroke: c.faint })),
       Plot.tip(
         withData,
@@ -176,7 +176,7 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
       x: dry ? x : { ...x, axis: null },
       y: { grid: true, nice: true, label: "°C", ticks: 3 },
       marks: [
-        Plot.line(weather, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2 }),
+        Plot.line(weather, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2, className: "reveal" }),
         Plot.ruleX(temps, Plot.pointerX({ x: "ts", stroke: c.faint })),
         Plot.tip(temps, Plot.pointerX({ x: "ts", y: "temperature", title: (w) => `${fmtDateTime(w.ts)}\n${w.temperature} °C` })),
       ],
@@ -200,6 +200,7 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
             insetLeft: hourlyBars ? 0.5 : 1,
             insetRight: hourlyBars ? 0.5 : 1,
             ry2: hourlyBars ? 0 : 3,
+            className: "grow",
           }),
           Plot.ruleY([0], { stroke: c.baseline }),
           Plot.tip(

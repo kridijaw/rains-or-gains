@@ -45,12 +45,13 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
     y: residualAxis,
     marks: [
       Plot.ruleY([0], { stroke: c.baseline }),
-      Plot.tickY(data, { x: "group", y: "residual", stroke: c.neutral, strokeOpacity: 0.35, strokeWidth: 1 }),
+      Plot.tickY(data, { x: "group", y: "residual", stroke: c.neutral, strokeOpacity: 0.35, strokeWidth: 1, className: "fade" }),
       Plot.tickY(medians, {
         x: "group",
         y: "median",
         stroke: c.text,
         strokeWidth: 3,
+        className: "pop pop-late",
         title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median, "%")}\nmean ${fmtSigned(s.mean, "%")}\n${countLabel(s)}`,
         tip: true,
       }),
@@ -118,6 +119,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
               fillOpacity: 0.75,
               stroke: c.surface,
               strokeWidth: 1,
+              className: "reveal",
             }),
             Plot.tip(
               scatter,

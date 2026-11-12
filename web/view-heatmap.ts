@@ -35,7 +35,7 @@ function heatmap(
   const rowHeight = Math.round(Math.min(34, Math.max(18, cellWidth * 0.7)));
   const shown = cells.filter((d) => hours.includes(d.hour));
   const filled = shown.filter((d) => d.value !== null);
-  return Plot.plot({
+  const plot = Plot.plot({
     width,
     height: 7 * rowHeight + 30,
     marginLeft: MARGIN_LEFT,
@@ -56,9 +56,16 @@ function heatmap(
         r: 2,
         title,
         tip: true,
+        className: "cells",
       }),
     ],
   });
+  // Stagger the entrance as a diagonal wave from the top-left cell.
+  plot.querySelectorAll<SVGRectElement>(".cells rect").forEach((rect, i) => {
+    const d = filled[i];
+    if (d) rect.style.setProperty("--i", String(hours.indexOf(d.hour) + WEEKDAYS.indexOf(d.weekday as (typeof WEEKDAYS)[number])));
+  });
+  return plot;
 }
 
 /** Earliest opening to latest closing over the week, so all rows share one x axis. */

@@ -1,5 +1,5 @@
 import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
-import { chartWidth, el, message } from "./chart";
+import { chartWidth, el, message, reducedMotion, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
 import { berlin, lastDays, startOfDay } from "./time";
@@ -45,6 +45,31 @@ interface State {
 
 let state: State | null = null;
 
+// Entrance animations run once per view, and again on a range or mode switch, but not on resize or refresh.
+const ENTER_MS = 1800;
+const enteredAt = new Map<View | "progress", number>();
+let shownValue: number | null = null;
+
+function enter(root: HTMLElement, key: View | "progress", restart = false): void {
+  if (restart || !enteredAt.has(key)) enteredAt.set(key, performance.now());
+  const elapsed = performance.now() - enteredAt.get(key)!;
+  root.classList.toggle("enter", elapsed < ENTER_MS && !reducedMotion());
+  // A redraw during the entrance resumes the animations where they were instead of restarting them.
+  root.style.setProperty("--t0", `${-Math.round(elapsed)}ms`);
+}
+
+function countUp(node: HTMLElement, from: number, to: number): void {
+  const start = performance.now();
+  const step = (t: number) => {
+    if (!node.isConnected) return;
+    const k = Math.min(1, (t - start) / 900);
+    node.textContent = `${Math.round(from + (to - from) * (1 - (1 - k) ** 3))}%`;
+    if (k < 1) requestAnimationFrame(step);
+  };
+  node.textContent = `${from}%`;
+  requestAnimationFrame(step);
+}
+
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const settled = <T>(r: PromiseSettledResult<T>): T | string => (r.status === "fulfilled" ? r.value : errorText(r.reason));
 const nowSeconds = () => Math.floor(Date.now() / 1000);
@@ -71,11 +96,12 @@ const heroWatcher = new IntersectionObserver(([entry]) => {
   sticky.classList.toggle("show", !entry.isIntersecting && entry.boundingClientRect.top < 0);
 });
 
-function draw(which: View[] = ALL): void {
+function draw(which: View[] = ALL, restart = false): void {
   const s = state;
   if (!s) return;
   const hourly = Array.isArray(s.hourly) ? s.hourly : null;
   const weather = s.weather === null || typeof s.weather === "string" ? s.weather : s.weather.hours;
+  if (hourly) enter(progress, "progress");
   renderProgress(progress, hourly && dataProgress(hourly, s.model, s.now));
   for (const view of which) {
     const root = views[view];
@@ -84,12 +110,19 @@ function draw(which: View[] = ALL): void {
     try {
       if (view === "now") {
         nowUpdated.textContent = "";
+        nowUpdated.classList.remove("live");
         nowStatus.replaceChildren();
         nowStatus.hidden = true;
         if (typeof s.nowBody === "string") root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
         else if (s.nowBody) {
+          enter(root, view);
           const summary = renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) });
+          const value = summary?.value ?? null;
+          const valueNode = root.querySelector<HTMLElement>(".hero-value");
+          if (value !== null && value !== shownValue && valueNode && !reducedMotion()) countUp(valueNode, shownValue ?? 0, value);
+          shownValue = value;
           nowUpdated.textContent = summary?.updated ?? "";
+          nowUpdated.classList.toggle("live", !!summary?.live);
           nowStatus.replaceChildren(...(summary?.status ? [summary.status] : []));
           nowStatus.hidden = !summary?.status;
           updateSticky(summary, s.studio);
@@ -104,6 +137,7 @@ function draw(which: View[] = ALL): void {
         continue;
       }
       if (!hourly) continue;
+      enter(root, view, restart);
       const width = chartWidth(root);
       if (view === "week")
         renderWeek(root, {
@@ -130,7 +164,7 @@ function draw(which: View[] = ALL): void {
 function setHeatMode(mode: HeatMode): void {
   if (!state) return;
   state.heatMode = mode;
-  draw(["heatmap"]);
+  draw(["heatmap"], true);
 }
 
 async function loadWeather(s: State, days: number): Promise<void> {
@@ -148,10 +182,12 @@ async function setRange(days: RangeDays): Promise<void> {
   const s = state;
   if (!s) return;
   s.days = days;
-  if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["week"]);
+  if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["week"], true);
   views.week.classList.add("loading");
   await loadWeather(s, days);
-  if (state === s) draw(["week", "effect"]);
+  if (state !== s) return;
+  draw(["week"], true);
+  draw(["effect"]);
 }
 
 const profileOf = (body: Loadable<NowBody>) => (typeof body === "object" ? body?.profile?.data : null);
@@ -201,7 +237,9 @@ async function render(studio: Studio): Promise<void> {
     refreshedAt: Date.now(),
   };
   state = s;
-  for (const root of Object.values(views)) root.replaceChildren(message("Loading…"));
+  enteredAt.clear();
+  shownValue = null;
+  for (const [view, root] of Object.entries(views)) root.replaceChildren(skeleton(view === "now" ? 300 : 220));
 
   const { from, to } = lastDays(HISTORY_DAYS, now);
   const holidays = getHolidays(from, to).then((h): Holiday[] | string => h, errorText);

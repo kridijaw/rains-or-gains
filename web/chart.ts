@@ -109,27 +109,74 @@ export function dataTable(summary: string, head: string[], rows: (string | numbe
   return el("details", { className: "table-view" }, el("summary", { text: summary }), el("div", { className: "table-scroll" }, table));
 }
 
+interface Segments {
+  group: HTMLElement;
+  thumb: HTMLElement;
+  buttons: HTMLButtonElement[];
+  index: number;
+  pick(i: number): void;
+}
+
+// Views rebuild their DOM on every draw; reusing the control keeps the thumb's position so it can glide.
+const segmentGroups = new Map<string, Segments>();
+
+function selectSegment(s: Segments, index: number): void {
+  s.index = index;
+  s.buttons.forEach((b, i) => b.setAttribute("aria-pressed", String(i === index)));
+  requestAnimationFrame(() => {
+    const b = s.buttons[s.index];
+    if (!s.group.isConnected || !b) return;
+    // Flush the old position first, so a control that was just re-inserted still transitions.
+    void s.thumb.offsetWidth;
+    s.thumb.style.width = `${b.offsetWidth}px`;
+    s.thumb.style.transform = `translateX(${b.offsetLeft}px)`;
+    if (!s.group.classList.contains("ready")) {
+      void s.thumb.offsetWidth;
+      s.group.classList.add("ready");
+    }
+  });
+}
+
 export function segmented<T extends string | number>(
   options: readonly { value: T; label: string }[],
   current: T,
   onPick: (value: T) => void,
   label: string,
 ): HTMLElement {
-  const group = el(
-    "div",
-    { className: "segmented" },
-    ...options.map(({ value, label }) => {
+  const key = `${label}:${options.map((o) => o.label).join("|")}`;
+  let s = segmentGroups.get(key);
+  if (!s) {
+    const thumb = el("span", { className: "seg-thumb" });
+    const buttons = options.map(({ label }, i) => {
       const b = el("button", { text: label });
       b.type = "button";
-      b.setAttribute("aria-pressed", String(value === current));
-      b.addEventListener("click", () => value !== current && onPick(value));
+      b.addEventListener("click", () => s!.pick(i));
       return b;
-    }),
-  );
-  group.setAttribute("role", "group");
-  group.setAttribute("aria-label", label);
-  return group;
+    });
+    const group = el("div", { className: "segmented" }, thumb, ...buttons);
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", label);
+    s = { group, thumb, buttons, index: -1, pick: () => {} };
+    segmentGroups.set(key, s);
+  }
+  const seg = s;
+  seg.pick = (i) => {
+    if (i === seg.index) return;
+    selectSegment(seg, i);
+    onPick(options[i].value);
+  };
+  selectSegment(seg, options.findIndex((o) => o.value === current));
+  return seg.group;
 }
+
+/** Placeholder block with a shimmer while a view loads. */
+export function skeleton(height = 220): HTMLElement {
+  const node = el("div", { className: "skeleton" }, el("span", { className: "visually-hidden", text: "Loading…" }));
+  node.style.setProperty("--h", `${height}px`);
+  return node;
+}
+
+export const reducedMotion = (): boolean => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Whole-hour ticks across [lo, hi], thinned to fit the width. */
 export function hourTicks(lo: number, hi: number, width: number): number[] {
