@@ -133,7 +133,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
         }),
         legend([
           { label: `Dry (n = ${scatter.filter((r) => r.wet === "Dry").length})`, key: "dot", color: c.neutral },
-          { label: `Rain (n = ${scatter.filter((r) => r.wet === "Rain").length})`, key: "triangle", color: c.rain },
+          { label: `Rain (n = ${scatter.filter((r) => r.wet === "Rain").length})`, key: "triangle-up", color: c.rain },
         ]),
       ),
     );
