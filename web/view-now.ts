@@ -57,37 +57,24 @@ function current({ now, body }: NowInput): Current | null {
 
 const about = (v: number) => `about ${fmtPct(v)}`;
 
-function outlookText(o: Outlook, value: number | null, tomorrow: OpenHours | null): { long: string; short: string } | null {
+/** Short outlook for the sticky bar, e.g. "Quieter from 22:00". */
+function outlookText(o: Outlook, value: number | null): string {
   const close = fmtHour(o.hours.close);
-  if (o.state === "after")
-    return { long: `Closed now.${tomorrow ? ` Opens tomorrow at ${fmtHour(tomorrow.open)}.` : ""}`, short: "Closed" };
-  if (o.state === "before") {
-    const open = `Opens at ${fmtHour(o.hours.open)}.`;
-    return {
-      long: o.best ? `${open} Usually quietest at ${fmtHour(o.best.hour)} (${about(o.best.v)}).` : open,
-      short: `Opens ${fmtHour(o.hours.open)}`,
-    };
-  }
+  if (o.state === "after") return "Closed";
+  if (o.state === "before") return `Opens ${fmtHour(o.hours.open)}`;
   const { quieterFrom: qf, best, peak } = o;
-  if (qf && best && best.hour !== qf.hour)
-    return {
-      long: `Quieter from ${fmtHour(qf.hour)}, ${about(qf.v)}. Quietest at ${fmtHour(best.hour)}, ${about(best.v)}.`,
-      short: `Quieter from ${fmtHour(qf.hour)}`,
-    };
-  if (qf) return { long: `Quieter from ${fmtHour(qf.hour)}, ${about(qf.v)}.`, short: `Quieter from ${fmtHour(qf.hour)}` };
-  if (best && value !== null)
-    return { long: `Slightly quieter at ${fmtHour(best.hour)}, ${about(best.v)}.`, short: `Slightly quieter ${fmtHour(best.hour)}` };
-  if (best) return { long: `Quietest left today: ${fmtHour(best.hour)}, ${about(best.v)}.`, short: `Quietest ${fmtHour(best.hour)}` };
-  if (peak && value !== null && peak.v >= value + 10)
-    return { long: `Now is a good time: ${about(peak.v)} expected at ${fmtHour(peak.hour)}.`, short: "Busier later" };
-  if (peak) return { long: `About this busy until close at ${close}.`, short: `Open until ${close}` };
-  return { long: `Closes at ${close}.`, short: `Closes ${close}` };
+  if (qf) return `Quieter from ${fmtHour(qf.hour)}`;
+  if (best && value !== null) return `Slightly quieter ${fmtHour(best.hour)}`;
+  if (best) return `Quietest ${fmtHour(best.hour)}`;
+  if (peak && value !== null && peak.v >= value + 10) return "Busier later";
+  if (peak) return `Open until ${close}`;
+  return `Closes ${close}`;
 }
 
 interface Today {
   cur: Current | null;
   outlook: Outlook | null;
-  text: { long: string; short: string } | null;
+  text: string | null;
   hours: OpenHours | null;
 }
 
@@ -98,7 +85,7 @@ function today(input: NowInput): Today {
   const hours = openHours(model, weekday);
   const usual = typicalDay(model, weekday).map((t) => (t.value !== null && isComparable(t.source) ? t.value : null));
   const o = outlook(usual, hours, hourOfDay(now), cur?.value ?? null);
-  const text = o && outlookText(o, cur?.value ?? null, openHours(model, (weekday + 1) % 7));
+  const text = o && outlookText(o, cur?.value ?? null);
   return { cur, outlook: o, text, hours };
 }
 
@@ -146,9 +133,6 @@ function hero(input: NowInput, t0: Today): HTMLElement {
       t0.cur?.term && el("span", { className: "hero-term", text: t0.cur.term }),
     ),
   );
-  if (t0.text) {
-    parts.push(el("p", { className: "outlook" }, el("span", { text: t0.text.long })));
-  }
   if (value !== null && value > 100) parts.push(message("FitX's scale goes past 100%. Shown as reported.", "muted small"));
 
   return el("div", { className: "now-hero" }, ...parts);
@@ -284,6 +268,6 @@ export function renderNow(root: HTMLElement, input: NowInput): NowSummary | null
   const t0 = today(input);
   root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...todayChart(input, t0))));
   return t0.cur
-    ? { value: t0.cur.value, term: t0.cur.term, outlook: t0.text?.short ?? null, updated: updatedText(input, t0.cur), status: status(input) }
+    ? { value: t0.cur.value, term: t0.cur.term, outlook: t0.text, updated: updatedText(input, t0.cur), status: status(input) }
     : null;
 }

@@ -169,12 +169,6 @@ button {
   color: var(--muted);
 }
 
-.outlook {
-  font-size: 1.1rem;
-  font-weight: 500;
-  margin: 0.25rem 0 0.5rem;
-}
-
 .progress {
   margin: 0 0 1rem;
   font-size: 0.85rem;
