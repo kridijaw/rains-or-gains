@@ -1,7 +1,7 @@
 import type { Profile } from "./fitx";
 
 export const NOW_MAX_SPAN = 36 * 3600;
-export const HOURLY_MAX_SPAN = 400 * 86400;
+export const HOURLY_MAX_SPAN = 100 * 86400;
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
