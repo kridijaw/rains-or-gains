@@ -174,6 +174,8 @@ export function residuals(
 export interface GroupStats<G extends string> {
   group: G;
   n: number;
+  /** Distinct dates among the n rows; hours of one day are not independent. */
+  days: number;
   mean: number | null;
   median: number | null;
 }
@@ -190,17 +192,22 @@ export function groupStats<T, G extends string>(
   groups: readonly G[],
   groupOf: (row: T) => G | null,
   value: (row: T) => number,
+  dateOf: (row: T) => string,
 ): GroupStats<G>[] {
-  const buckets = new Map<G, number[]>(groups.map((g) => [g, []]));
+  const buckets = new Map<G, { values: number[]; dates: Set<string> }>(groups.map((g) => [g, { values: [], dates: new Set() }]));
   for (const row of rows) {
     const g = groupOf(row);
-    if (g !== null) buckets.get(g)?.push(value(row));
+    const b = g === null ? undefined : buckets.get(g);
+    if (!b) continue;
+    b.values.push(value(row));
+    b.dates.add(dateOf(row));
   }
   return groups.map((group) => {
-    const values = buckets.get(group) ?? [];
+    const { values, dates } = buckets.get(group) ?? { values: [], dates: new Set() };
     return {
       group,
       n: values.length,
+      days: dates.size,
       mean: values.length ? values.reduce((a, b) => a + b, 0) / values.length : null,
       median: median(values),
     };

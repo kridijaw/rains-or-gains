@@ -13,6 +13,7 @@ import {
   type Residual,
 } from "./series";
 import { describeSource, MIN_FIT_HOURS, MIN_WEEKS, type TypicalModel } from "./typical";
+import { berlin } from "./time";
 import type { WeatherHour } from "./weather";
 
 export interface EffectInput {
@@ -24,11 +25,14 @@ export interface EffectInput {
   width: number;
 }
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const countLabel = (s: GroupStats<string> | undefined) => (s ? `${s.n} h over ${plural(s.days, "day")}` : "0 h");
+
 const residualAxis = { grid: true, nice: true, label: "Residual, points" } as const;
 
 function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], groupOf: (r: Residual) => G | null, width: number) {
   const c = theme();
-  const n = new Map(stats.map((s) => [s.group, s.n]));
+  const byGroup = new Map(stats.map((s) => [s.group, s]));
   const data = rows.flatMap((r) => {
     const group = groupOf(r);
     return group === null ? [] : [{ ...r, group }];
@@ -39,7 +43,7 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
     height: 220,
     ...MARGIN,
     marginBottom: 36,
-    x: { domain: stats.map((s) => s.group), tickFormat: (g: G) => `${g}\nn = ${n.get(g) ?? 0}`, tickSize: 0, label: null, padding: 0.3 },
+    x: { domain: stats.map((s) => s.group), tickFormat: (g: G) => `${g}\n${countLabel(byGroup.get(g))}`, tickSize: 0, label: null, padding: 0.3 },
     y: residualAxis,
     marks: [
       Plot.ruleY([0], { stroke: c.baseline }),
@@ -49,7 +53,7 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
         y: "median",
         stroke: c.text,
         strokeWidth: 3,
-        title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median)}\nmean ${fmtSigned(s.mean)}\nn = ${s.n} hours`,
+        title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median)}\nmean ${fmtSigned(s.mean)}\n${countLabel(s)}`,
         tip: true,
       }),
     ],
@@ -85,8 +89,15 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
 
   const twoUp = width >= 760;
   const half = twoUp ? Math.floor((width - 24) / 2) : width;
-  const rainStats = groupStats(rows, RAIN_BUCKETS, (r) => (r.precipitation === null ? null : rainBucket(r.precipitation)), (r) => r.residual);
-  const dayStats = groupStats(rows, DAY_GROUPS, (r) => r.day, (r) => r.residual);
+  const dateOf = (r: Residual) => berlin(r.ts).date;
+  const rainStats = groupStats(
+    rows,
+    RAIN_BUCKETS,
+    (r) => (r.precipitation === null ? null : rainBucket(r.precipitation)),
+    (r) => r.residual,
+    dateOf,
+  );
+  const dayStats = groupStats(rows, DAY_GROUPS, (r) => r.day, (r) => r.residual, dateOf);
 
   if (weather === null) blocks.push(message("Loading weather…"));
   else if (typeof weather === "string") blocks.push(message(`Weather unavailable: ${weather}`, "error"));
@@ -153,13 +164,13 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     ),
   );
   blocks.push(pair);
-  blocks.push(message("Thin ticks are single hours; the bold tick is the median.", "muted small"));
+  blocks.push(message("Thin ticks are single hours; the bold tick is the median. Hours of one day move together, so the day count is the real sample size.", "muted small"));
 
-  const fmtRow = (s: GroupStats<string>) => [s.group, s.n, fmtSigned(s.mean), fmtSigned(s.median)];
+  const fmtRow = (s: GroupStats<string>) => [s.group, s.n, s.days, fmtSigned(s.mean), fmtSigned(s.median)];
   blocks.push(
     dataTable(
       "Groups as a table",
-      ["Group", "Hours", "Mean residual", "Median residual"],
+      ["Group", "Hours", "Days", "Mean residual", "Median residual"],
       [...(Array.isArray(weather) ? rainStats.map(fmtRow) : []), ...dayStats.map(fmtRow)],
     ),
   );

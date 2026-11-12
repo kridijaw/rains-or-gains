@@ -310,11 +310,17 @@ describe("series", () => {
 
   it("buckets rain and summarises groups", () => {
     expect([0, 0.2, 1, 3].map(rainBucket)).toEqual(["Dry", "Under 1 mm", "1 mm or more", "1 mm or more"]);
-    const stats = groupStats([1, 2, 3, 10], ["low", "high", "none"] as const, (v) => (v < 5 ? "low" : "high"), (v) => v);
+    const stats = groupStats(
+      [1, 2, 3, 10],
+      ["low", "high", "none"] as const,
+      (v) => (v < 5 ? "low" : "high"),
+      (v) => v,
+      (v) => (v < 2 ? "2026-10-03" : "2026-10-04"),
+    );
     expect(stats).toEqual([
-      { group: "low", n: 3, mean: 2, median: 2 },
-      { group: "high", n: 1, mean: 10, median: 10 },
-      { group: "none", n: 0, mean: null, median: null },
+      { group: "low", n: 3, days: 2, mean: 2, median: 2 },
+      { group: "high", n: 1, days: 1, mean: 10, median: 10 },
+      { group: "none", n: 0, days: 0, mean: null, median: null },
     ]);
   });
 
