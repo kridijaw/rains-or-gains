@@ -21,6 +21,7 @@ const progress = document.querySelector<HTMLElement>("#progress")!;
 const sticky = document.querySelector<HTMLAnchorElement>("#sticky-now")!;
 const nowUpdated = document.querySelector<HTMLElement>("#now-updated")!;
 const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
+const baseTitle = document.title;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
 const views = { now: body("view-now"), week: body("view-week"), heatmap: body("view-heatmap"), effect: body("view-effect") };
 type View = keyof typeof views;
@@ -75,6 +76,7 @@ const settled = <T>(r: PromiseSettledResult<T>): T | string => (r.status === "fu
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 function updateSticky(summary: NowSummary | null, studio: Studio): void {
+  document.title = summary?.value == null ? baseTitle : `${summary.value}% · ${baseTitle}`;
   sticky.hidden = !summary;
   if (!summary) {
     sticky.replaceChildren();
@@ -113,7 +115,10 @@ function draw(which: View[] = ALL, restart = false): void {
         nowUpdated.classList.remove("live");
         nowStatus.replaceChildren();
         nowStatus.hidden = true;
-        if (typeof s.nowBody === "string") root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
+        if (typeof s.nowBody === "string") {
+          root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
+          document.title = baseTitle;
+        }
         else if (s.nowBody) {
           enter(root, view);
           const summary = renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) });
@@ -222,6 +227,7 @@ async function refreshNow(): Promise<void> {
 
 async function render(studio: Studio): Promise<void> {
   studioName.textContent = studio.name;
+  document.title = baseTitle;
   const now = nowSeconds();
   const s: State = {
     studio,

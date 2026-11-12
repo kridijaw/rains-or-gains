@@ -95,6 +95,20 @@ h1 {
   margin: 0;
 }
 
+.wordmark {
+  font-weight: 750;
+}
+
+.wordmark-rain {
+  color: var(--series-1);
+}
+
+.wordmark-or {
+  font-size: 0.8em;
+  font-weight: 500;
+  color: var(--faint);
+}
+
 h2 {
   display: flex;
   flex-wrap: wrap;
