@@ -58,6 +58,31 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 
 export const message = (text: string, className = "muted"): HTMLParagraphElement => el("p", { className, text });
 
+let tipCount = 0;
+
+/** Info icon that shows `text` in a tooltip on hover, tap or focus. */
+export function infoTip(text: string): HTMLButtonElement {
+  const icon = el("span", { className: "info-icon", text: "i" });
+  icon.setAttribute("aria-hidden", "true");
+  const tip = el("span", { className: "info-tip", text });
+  tip.id = `info-tip-${++tipCount}`;
+  tip.setAttribute("role", "tooltip");
+  const button = el("button", { className: "info" }, icon, tip);
+  button.type = "button";
+  button.setAttribute("aria-label", "More info");
+  button.setAttribute("aria-describedby", tip.id);
+  const place = () => {
+    tip.style.setProperty("--dx", "0px");
+    const r = tip.getBoundingClientRect();
+    const right = document.documentElement.clientWidth - 8;
+    const dx = r.left < 8 ? 8 - r.left : r.right > right ? right - r.right : 0;
+    tip.style.setProperty("--dx", `${dx}px`);
+  };
+  button.addEventListener("pointerenter", place);
+  button.addEventListener("focus", place);
+  return button;
+}
+
 const fmt = (options: Intl.DateTimeFormatOptions) => {
   const f = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, ...options });
   return (ts: number) => f.format(ts * 1000);
@@ -83,20 +108,31 @@ export function fmtAge(seconds: number): string {
 
 export type LegendKey = "line" | "dash" | "wash" | "ribbon" | "bar" | "rule" | "dot" | "triangle" | "triangle-up" | "outline";
 
-export function legend(items: { label: string; key: LegendKey; color: string }[]): HTMLElement {
+export interface LegendItem {
+  label: string;
+  key: LegendKey;
+  color: string;
+  info?: string;
+}
+
+export function legend(items: LegendItem[]): HTMLElement {
   return el(
     "ul",
     { className: "legend" },
-    ...items.map(({ label, key, color }) => {
+    ...items.map(({ label, key, color, info }) => {
       const swatch = el("span", { className: `key key-${key}` });
       swatch.style.setProperty("--key", color);
-      return el("li", {}, swatch, el("span", { text: label }));
+      return el("li", {}, swatch, el("span", { className: info ? "with-info" : "" }, label, info && infoTip(info)));
     }),
   );
 }
 
 export function chartBlock(title: string | null, chart: Element, ...extra: Child[]): HTMLElement {
-  return el("figure", { className: "chart" }, title && el("figcaption", { text: title }), chart, ...extra);
+  return captionedBlock(title, null, chart, ...extra);
+}
+
+export function captionedBlock(title: string | null, info: string | null, chart: Element, ...extra: Child[]): HTMLElement {
+  return el("figure", { className: "chart" }, title && el("figcaption", { className: info ? "with-info" : "" }, title, info && infoTip(info)), chart, ...extra);
 }
 
 export function dataTable(summary: string, head: string[], rows: (string | number)[][]): HTMLDetailsElement {

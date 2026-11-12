@@ -334,8 +334,6 @@ select:hover {
 }
 
 .progress {
-  position: relative;
-  z-index: 2;
   margin: 0 0 1rem;
   padding: 0.85rem 1.25rem;
   border: 1px solid var(--border);
@@ -369,20 +367,27 @@ select:hover {
   color: var(--series-3);
 }
 
-.milestone-head {
-  position: relative;
+.milestone-head,
+.with-info {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+}
+
+:is(.view, .progress):has(.info:is(:hover, :focus)) {
+  position: relative;
+  z-index: 5;
 }
 
 .info {
+  position: relative;
   display: inline-grid;
   place-items: center;
+  margin-left: 0.35rem;
   padding: 0;
   border: 0;
   background: none;
   border-radius: 50%;
+  align-self: center;
   color: var(--faint);
   cursor: help;
 }
@@ -400,16 +405,19 @@ select:hover {
   border: 1.5px solid currentColor;
   border-radius: 50%;
   font: italic 700 0.62rem/1 Georgia, serif;
+  letter-spacing: 0;
 }
 
 .info-tip {
   position: absolute;
   z-index: 10;
   top: calc(100% + 0.4rem);
-  left: 0;
+  left: 50%;
+  margin-left: var(--dx, 0px);
+  translate: -50% 0;
   width: max-content;
-  max-width: 100%;
-  padding: 0.4rem 0.6rem;
+  max-width: min(20rem, calc(100vw - 1rem));
+  padding: 0.45rem 0.65rem;
   border: 1px solid var(--border);
   border-radius: 0.5rem;
   background: var(--surface);
@@ -417,17 +425,27 @@ select:hover {
   color: var(--text);
   font-size: 0.8rem;
   font-weight: 400;
+  font-style: normal;
+  line-height: 1.4;
+  letter-spacing: 0;
   text-align: left;
+  white-space: pre-line;
   pointer-events: none;
-  opacity: 0;
-  transform: translateY(-2px);
+  display: none;
   transition: opacity 0.15s, transform 0.15s var(--ease);
 }
 
 .info:hover .info-tip,
 .info:focus .info-tip {
-  opacity: 1;
-  transform: none;
+  display: block;
+}
+
+@starting-style {
+  .info:hover .info-tip,
+  .info:focus .info-tip {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
 }
 
 .bar {

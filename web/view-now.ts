@@ -1,6 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import type { NowBody } from "./api";
 import {
+  captionedBlock,
   chartBlock,
   dataTable,
   el,
@@ -13,13 +14,17 @@ import {
   MARGIN,
   message,
   theme,
-  type LegendKey,
+  type LegendItem,
 } from "./chart";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
 import { berlin } from "./time";
-import { openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
+import { MIN_FIT_HOURS, MIN_WEEKS, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+const USUAL_INFO =
+  `The mean of own data for this weekday and hour once it covers ${MIN_WEEKS} weeks. ` +
+  `Until then, the FitX profile scaled to % from at least ${MIN_FIT_HOURS} hours where both overlap.`;
 
 export interface NowInput {
   now: number;
@@ -256,11 +261,11 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   });
 
   const blocks: HTMLElement[] = [];
-  const keys: { label: string; key: LegendKey; color: string }[] = [
+  const keys: LegendItem[] = [
     { label: "Today, every 5 min", key: "line", color: c.occupancy },
   ];
   if (ahead.length) keys.push({ label: "Expected rest of today", key: "dash", color: c.occupancy });
-  if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral });
+  if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral, info: USUAL_INFO });
   blocks.push(chartBlock(null, chart, legend(keys)));
   if (valid.length === 0) blocks.unshift(message("No readings since midnight yet."));
 
@@ -278,7 +283,13 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
         Plot.ruleY([0], { stroke: c.baseline }),
       ],
     });
-    blocks.push(chartBlock(`FitX profile for ${DAY_NAMES[weekday]}, shape only (unknown unit, not comparable to %)`, shape));
+    blocks.push(
+      captionedBlock(
+        `FitX profile for ${DAY_NAMES[weekday]}, shape only`,
+        "FitX publishes this curve in an unknown unit, so it shows the shape of the day but cannot be compared with the % values.",
+        shape,
+      ),
+    );
   }
 
   const byHour = new Map<number, number[]>();

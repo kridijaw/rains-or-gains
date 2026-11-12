@@ -1,10 +1,10 @@
 import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
-import { chartWidth, el, message, reducedMotion, skeleton } from "./chart";
+import { chartWidth, el, infoTip, message, reducedMotion, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
 import { berlin, lastDays, startOfDay } from "./time";
 import { buildTypical, type TypicalModel } from "./typical";
-import { renderEffect } from "./view-effect";
+import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
 import { renderNow, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
@@ -25,6 +25,7 @@ const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
 const baseTitle = document.title;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
 const views = { now: body("view-now"), week: body("view-week"), heatmap: body("view-heatmap"), effect: body("view-effect") };
+document.querySelector("#view-effect h2")!.append(infoTip(EFFECT_INFO));
 type View = keyof typeof views;
 const ALL: View[] = ["now", "week", "heatmap", "effect"];
 

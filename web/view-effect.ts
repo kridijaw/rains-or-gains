@@ -26,6 +26,11 @@ export interface EffectInput {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const countLabel = (s: GroupStats<string> | undefined) => (s ? `${s.n} h over ${plural(s.days, "day")}` : "0 h");
 
+export const EFFECT_INFO =
+  "Residual: the hourly mean minus the usual value for that weekday and hour, as % of usual.\n\n" +
+  "In the box plots, thin ticks are single hours, the shaded box holds the middle half, and the bold tick is the median. " +
+  "Hours of one day move together, so the day count is the real sample size.";
+
 const residualAxis = { grid: true, nice: true, label: "Residual, % of usual" } as const;
 
 function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], groupOf: (r: Residual) => G | null, width: number) {
@@ -82,9 +87,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     );
     return false;
   }
-  const blocks: (HTMLElement | false)[] = [
-    message("Residual = hourly mean minus the usual value for that weekday and hour, as % of usual.", "muted small"),
-  ];
+  const blocks: (HTMLElement | false)[] = [];
 
   const twoUp = width >= 760;
   const half = twoUp ? Math.floor((width - 24) / 2) : width;
@@ -164,7 +167,6 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     ),
   );
   blocks.push(pair);
-  blocks.push(message("Thin ticks are single hours, the shaded box holds the middle half, and the bold tick is the median. Hours of one day move together, so the day count is the real sample size.", "muted small"));
 
   const fmtRow = (s: GroupStats<string>) => [s.group, s.n, s.days, fmtSigned(s.mean, "%"), fmtSigned(s.median, "%")];
   blocks.push(

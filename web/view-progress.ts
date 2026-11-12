@@ -1,4 +1,4 @@
-import { el, fmtDate } from "./chart";
+import { el, fmtDate, infoTip } from "./chart";
 import { EFFECT_DAYS, type DataProgress } from "./series";
 import { startOfDay } from "./time";
 import { MIN_FIT_HOURS, MIN_WEEKS } from "./typical";
@@ -58,19 +58,10 @@ export function renderProgress(root: HTMLElement, p: DataProgress | null): void 
       ...steps.map((s) => {
         const bar = el("span", { className: "bar" }, el("span", { className: "bar-fill" }));
         bar.style.setProperty("--done", String(Math.max(0.02, s.done)));
-        const info = el(
-          "button",
-          { className: "info" },
-          el("span", { className: "info-icon", text: "i" }),
-          el("span", { className: "info-tip", text: s.detail }),
-        );
-        info.type = "button";
-        info.firstElementChild!.setAttribute("aria-hidden", "true");
-        info.lastElementChild!.setAttribute("role", "tooltip");
         return el(
           "li",
           { className: s.done >= 1 ? "done" : "" },
-          el("span", { className: "milestone-head" }, el("span", { className: "milestone-label", text: s.label }), info),
+          el("span", { className: "milestone-head" }, el("span", { className: "milestone-label", text: s.label }), infoTip(s.detail)),
           bar,
         );
       }),
