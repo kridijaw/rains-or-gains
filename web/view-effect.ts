@@ -4,7 +4,6 @@ import { chartBlock, dataTable, el, fmtDateTime, fmtPct, fmtSigned, legend, MARG
 import type { Holiday } from "./holidays";
 import {
   DAY_GROUPS,
-  dataDays,
   groupStats,
   RAIN_BUCKETS,
   rainBucket,
@@ -17,7 +16,6 @@ import { berlin } from "./time";
 import type { WeatherHour } from "./weather";
 
 export interface EffectInput {
-  now: number;
   hourly: HourlyTuple[];
   model: TypicalModel;
   weather: WeatherHour[] | string | null;
@@ -28,7 +26,7 @@ export interface EffectInput {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const countLabel = (s: GroupStats<string> | undefined) => (s ? `${s.n} h over ${plural(s.days, "day")}` : "0 h");
 
-const residualAxis = { grid: true, nice: true, label: "Residual, points" } as const;
+const residualAxis = { grid: true, nice: true, label: "Residual, % of usual" } as const;
 
 function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], groupOf: (r: Residual) => G | null, width: number) {
   const c = theme();
@@ -53,7 +51,7 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
         y: "median",
         stroke: c.text,
         strokeWidth: 3,
-        title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median)}\nmean ${fmtSigned(s.mean)}\n${countLabel(s)}`,
+        title: (s: GroupStats<G>) => `${s.group}\nmedian ${fmtSigned(s.median, "%")}\nmean ${fmtSigned(s.mean, "%")}\n${countLabel(s)}`,
         tip: true,
       }),
     ],
@@ -62,11 +60,10 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
 
 /** Returns false while there is nothing to compare yet. */
 export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
-  const { now, hourly, model, weather, holidays, width } = input;
+  const { hourly, model, weather, holidays, width } = input;
   const c = theme();
   const weatherRows = Array.isArray(weather) ? weather : [];
   const rows = residuals(hourly, model, weatherRows, Array.isArray(holidays) ? holidays : []);
-  const days = dataDays(hourly, now);
   if (rows.length === 0) {
     root.replaceChildren(
       message(
@@ -78,11 +75,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
     return false;
   }
   const blocks: (HTMLElement | false)[] = [
-    message(
-      `Residual = hourly mean minus the usual value for that weekday and hour. ` +
-        `This needs weeks of data, with dry and rainy hours at every time of day, before it means anything. ` +
-        `So far: ${rows.length} hours over ${days} day${days === 1 ? "" : "s"}.`,
-    ),
+    message("Residual = hourly mean minus the usual value for that weekday and hour, as % of usual.", "chart-note"),
   ];
 
   const twoUp = width >= 760;
@@ -132,7 +125,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
                 x: "temperature",
                 y: "residual",
                 title: (r) =>
-                  `${fmtDateTime(r.ts)}\n${fmtSigned(r.residual)} points (${fmtPct(r.avg)} vs usual ${fmtPct(r.typical)})\n` +
+                  `${fmtDateTime(r.ts)}\n${fmtSigned(r.residual, "%")} (${fmtPct(r.avg)} vs usual ${fmtPct(r.typical)})\n` +
                   `${r.temperature} °C, ${r.precipitation?.toFixed(1)} mm`,
               }),
             ),
@@ -164,11 +157,11 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
   blocks.push(pair);
   blocks.push(message("Thin ticks are single hours; the bold tick is the median. Hours of one day move together, so the day count is the real sample size.", "muted small"));
 
-  const fmtRow = (s: GroupStats<string>) => [s.group, s.n, s.days, fmtSigned(s.mean), fmtSigned(s.median)];
+  const fmtRow = (s: GroupStats<string>) => [s.group, s.n, s.days, fmtSigned(s.mean, "%"), fmtSigned(s.median, "%")];
   blocks.push(
     dataTable(
       "Groups as a table",
-      ["Group", "Hours", "Days", "Mean residual", "Median residual"],
+      ["Group", "Hours", "Days", "Mean residual, %", "Median residual, %"],
       [...(Array.isArray(weather) ? rainStats.map(fmtRow) : []), ...dayStats.map(fmtRow)],
     ),
   );

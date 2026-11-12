@@ -302,8 +302,9 @@ describe("series", () => {
     const weather = [{ ts: ts + 3600, temperature: 12, precipitation: 0.4, sunshine: 0, cloudCover: 90 }];
     const holidays = [{ id: "u", kind: "public" as const, start: "2026-10-03", end: "2026-10-03", name: "German Unity Day" }];
     const [r] = residuals([[ts, 55, 60, 12], [ts + 3600, null, null, 0]], model, weather, holidays);
-    expect(r).toMatchObject({ residual: 15, temperature: 12, precipitation: 0.4, day: "Public holiday" });
+    expect(r).toMatchObject({ residual: 37.5, temperature: 12, precipitation: 0.4, day: "Public holiday" });
     expect(residuals([[ts, 55, 60, 12]], { typical: () => ({ value: 90, source: "profile-relative", weeks: 0 }) }, [], [])).toEqual([]);
+    expect(residuals([[ts, 5, 6, 12]], { typical: () => ({ value: 3, source: "own", weeks: 3 }) }, [], [])).toEqual([]);
   });
 
   it("buckets rain and summarises groups", () => {

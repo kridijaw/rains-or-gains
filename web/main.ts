@@ -117,7 +117,7 @@ function draw(which: View[] = ALL): void {
           onRange: setRange,
         });
       else if (view === "heatmap") empty = !renderHeatmap(root, { model: s.model, width, mode: s.heatMode, onMode: setHeatMode });
-      else empty = !renderEffect(root, { now: s.now, hourly, model: s.model, weather, holidays: s.holidays, width });
+      else empty = !renderEffect(root, { hourly, model: s.model, weather, holidays: s.holidays, width });
     } catch (err) {
       console.error(err);
       root.replaceChildren(message(`Could not draw this view: ${errorText(err)}`, "error"));

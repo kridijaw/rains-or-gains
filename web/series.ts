@@ -131,6 +131,7 @@ export interface Residual {
   ts: number;
   avg: number;
   typical: number;
+  /** Hourly mean relative to usual, in % of usual */
   residual: number;
   n: number;
   source: TypicalSource;
@@ -138,6 +139,9 @@ export interface Residual {
   precipitation: number | null;
   day: DayGroup;
 }
+
+// Below this the relative residual is mostly rounding noise: 1 point on a usual 3% reads as 33%.
+export const MIN_USUAL_PCT = 10;
 
 // Weather joins on ts + 3600: Open-Meteo's precipitation at hour h covers the hour before h.
 export function residuals(
@@ -153,14 +157,14 @@ export function residuals(
     if (avg === null || n <= 0) continue;
     const { date, weekday, hour } = berlin(ts);
     const t = model.typical(weekday, hour);
-    if (t.value === null || !isComparable(t.source)) continue;
+    if (t.value === null || !isComparable(t.source) || t.value < MIN_USUAL_PCT) continue;
     const w = weatherAt.get(ts + 3600);
     const kind = dayKind(calendar, date);
     rows.push({
       ts,
       avg,
       typical: t.value,
-      residual: avg - t.value,
+      residual: ((avg - t.value) / t.value) * 100,
       n,
       source: t.source,
       temperature: w?.temperature ?? null,
