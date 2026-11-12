@@ -1,8 +1,14 @@
+import { handleApi } from "./api";
 import { fetchProfile, fetchWorkload, type Studio } from "./fitx";
 
 const PROFILE_CRON = "7 3 * * *";
 
 export default {
+  async fetch(request, env, ctx) {
+    if (new URL(request.url).pathname.startsWith("/api/")) return handleApi(request, env, ctx);
+    return env.ASSETS.fetch(request);
+  },
+
   async scheduled(controller, env) {
     if (controller.cron === PROFILE_CRON) await snapshotProfiles(env);
     else await sample(env, Math.floor(controller.scheduledTime / 1000));
@@ -31,11 +37,23 @@ async function sample(env: Env, ts: number): Promise<void> {
       env.DB.prepare(
         "INSERT OR REPLACE INTO samples (branch_id, ts, percentage, term, source, hidden, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
       ).bind(branchId, ts, w.percentage, w.term, w.source, w.hidden ? 1 : 0, w.status),
+      rollupHour(env, branchId, ts),
       upsertStudio(env, studio, ts),
     );
   });
 
   await env.DB.batch(statements);
+}
+
+// Recomputing the whole hour (about 12 rows) keeps it correct even when earlier runs in the hour failed.
+function rollupHour(env: Env, branchId: number, ts: number): D1PreparedStatement {
+  const hour = ts - (ts % 3600);
+  return env.DB.prepare(
+    `INSERT OR REPLACE INTO hourly (branch_id, hour_ts, avg_pct, max_pct, n)
+     SELECT branch_id, ?, avg(percentage), max(percentage), count(percentage)
+     FROM samples WHERE branch_id = ? AND ts >= ? AND ts < ? AND percentage IS NOT NULL AND hidden = 0
+     GROUP BY branch_id`,
+  ).bind(hour, branchId, hour, hour + 3600);
 }
 
 // The WHERE clause skips the write when nothing changed, so this costs no D1 writes on most runs.
