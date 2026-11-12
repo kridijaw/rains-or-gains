@@ -5,7 +5,10 @@
   "compatibility_date": "2026-11-12",
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [{ "pattern": "gym.kridi.dev", "custom_domain": true }],
   "observability": { "enabled": true },
+  // public/ is build output (gitignored). Asset hits skip the Worker; /api/* and unmatched paths invoke it.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
   // Every 5 min: sample occupancy. Daily 03:07 UTC: snapshot the historical profile (must match PROFILE_CRON).
   "triggers": { "crons": ["*/5 * * * *", "7 3 * * *"] },
   "d1_databases": [

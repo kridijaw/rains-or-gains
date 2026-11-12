@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>rain-or-gains</title>
+    <meta name="description" content="How full is the gym, and does the weather change it? Live FitX occupancy with weather and holidays." />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>rain-or-gains</h1>
+      <label class="studio-picker" hidden>
+        <span>Studio</span>
+        <select id="studio"></select>
+      </label>
+      <p id="studio-name" class="studio-name"></p>
+    </header>
+    <main id="views">
+      <section id="view-now" class="view"><h2>Now</h2><div class="view-body"></div></section>
+      <section id="view-week" class="view"><h2>Week and weather</h2><div class="view-body"></div></section>
+      <section id="view-heatmap" class="view"><h2>Typical week</h2><div class="view-body"></div></section>
+      <section id="view-effect" class="view"><h2>Weather effect</h2><div class="view-body"></div></section>
+    </main>
+    <footer class="site-footer">
+      Occupancy from FitX, sampled every 5 minutes. Weather by
+      <a href="https://open-meteo.com/">Open-Meteo</a>, holidays by <a href="https://www.openholidaysapi.org/">OpenHolidays</a>.
+    </footer>
+  </body>
+</html>
