@@ -41,6 +41,30 @@ Name, alias and coordinates per studio, kept current from each sample. The coord
 
 `data` is the JSON 7x24 grid described above, with `fetched_at` of the snapshot.
 
+### hourly (rollup of samples, one row per studio per UTC hour)
+
+| column | meaning |
+|---|---|
+| `hour_ts` | unix seconds UTC, start of the hour |
+| `avg_pct`, `max_pct` | mean and max `percentage` over the hour's samples |
+| `n` | samples with a percentage (12 for a complete hour). Error rows and hidden gauges are excluded, so a low `n` marks a coverage gap |
+
+Every sample run recomputes its current hour from `samples`, so the table stays live and self-heals. Migration `0002_hourly.sql` backfilled it from existing samples. The dashboard API reads this table instead of raw samples to stay within the D1 free tier.
+
+## HTTP API
+
+Served by the same Worker under `/api/*`; everything else is static assets from `public/`. All times are unix seconds UTC.
+
+| route | returns | cache |
+|---|---|---|
+| `GET /api/studios` | `[{branchId, name, alias, lat, lon}]` | 1 day (60 s while still empty) |
+| `GET /api/now?branch=82&since=<unix>` | `{latest, samples: [[ts, pct], ...], profile: {fetchedAt, data} \| null}`. `since` defaults to 24 h ago and is capped at 36 h | 60 s |
+| `GET /api/hourly?branch=82&from=<unix>&to=<unix>` | `[[hour_ts, avg, max, n], ...]` for `from <= hour_ts < to`, at most 400 days | 300 s |
+
+`latest` is `{ts, percentage, term, hidden, status, error}` or `null`. In `samples`, hidden gauges have a null percentage. `since`, `from` and `to` must be hour-aligned (multiples of 3600). The edge cache is keyed on the parsed parameters, so extra query params do not bypass it. Invalid parameters return 400 with `{error}`.
+
+For local work, `npm run seed:local` applies migrations to the local D1 and fills it with a few days of synthetic samples for branch 82 (never touches the remote database).
+
 ## Analysis notes
 
 - Convert `ts` to `Europe/Berlin` before grouping by hour or weekday; DST shifts the UTC hour twice a year.
