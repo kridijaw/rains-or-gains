@@ -114,7 +114,7 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
     const faded = own.some((d) => d.value !== null && d.weeks < MIN_WEEKS);
     blocks.push(
       chartBlock(
-        "Own data, mean per weekday and hour",
+        null,
         heatmap(
           own,
           hours,
@@ -131,7 +131,7 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
     const shared = scale !== null;
     blocks.push(
       chartBlock(
-        shared ? `FitX profile, scaled ×${scale.toFixed(2)} to %` : "FitX profile, relative units",
+        null,
         heatmap(
           profile,
           hours,
@@ -142,19 +142,13 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${shared ? fmtPct(d.value) : Math.round(d.value ?? 0)}`,
           false,
         ),
-        message(
-          shared
-            ? `Scale fitted on ${model.fitHours} hours of own data, so it shares the colour scale with the own data map.`
-            : "Not on the % scale until enough own data overlaps it.",
-          "muted small",
-        ),
       ),
     );
   } else {
     const m = Math.max(10, ...diff.filter((d) => hours.includes(d.hour)).map((d) => Math.abs(d.value ?? 0)));
     blocks.push(
       chartBlock(
-        "Own data minus scaled FitX profile",
+        null,
         heatmap(
           diff,
           hours,
@@ -163,7 +157,6 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtSigned(d.value, " points")}\n${weeksLabel(d)}`,
           true,
         ),
-        message("Red: busier than FitX's own history says. Blue: quieter. Faded cells rest on fewer than 3 weeks.", "muted small"),
       ),
     );
   }

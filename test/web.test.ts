@@ -20,7 +20,7 @@ import {
 } from "../web/series";
 import { dayKind, holidayCalendar, parseHolidays, yearsBetween } from "../web/holidays";
 import { addDays, berlin, daysBetween, hourFloor, lastDays, startOfDay } from "../web/time";
-import { buildTypical, cellStats, describeSource, fitScale, MIN_FIT_HOURS, openHours, typicalDay } from "../web/typical";
+import { buildTypical, cellStats, fitScale, MIN_FIT_HOURS, openHours, typicalDay } from "../web/typical";
 import { mergeWeather, parseOpenMeteo, weatherRequests } from "../web/weather";
 
 const utc = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) / 1000;
@@ -84,7 +84,6 @@ describe("typical", () => {
     const model = buildTypical(rows, profile);
     expect(model.scale).toBeNull();
     expect(model.typical(0, 18)).toEqual({ value: profile[0][18], source: "profile-relative", weeks: 2 });
-    expect(describeSource("profile-relative", model)).toMatch(/relative/);
   });
 
   it("fits one scale factor from overlapping hours and applies it to the profile", () => {
@@ -96,7 +95,6 @@ describe("typical", () => {
     expect(model.scale).toBeCloseTo(0.8, 10);
     expect(model.typical(4, 20).source).toBe("profile-scaled");
     expect(model.typical(4, 20).value).toBeCloseTo(0.8 * profile[4][20], 10);
-    expect(describeSource("profile-scaled", model)).toContain("×0.80");
   });
 
   it("derives opening hours from the profile, else from fully observed own days", () => {

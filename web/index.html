@@ -18,12 +18,12 @@
         <select id="studio"></select>
       </label>
       <p id="studio-name" class="studio-name"></p>
-      <p class="tagline">How full is the gym, and does the weather change it?</p>
+      <div id="now-status" class="header-status" hidden></div>
     </header>
     <a id="sticky-now" class="sticky-now" href="#view-now" hidden aria-hidden="true" tabindex="-1"></a>
     <section id="progress" class="progress" aria-label="Data collected so far" hidden></section>
     <main id="views">
-      <section id="view-now" class="view"><h2>Now</h2><div class="view-body"></div></section>
+      <section id="view-now" class="view"><h2>Now <span id="now-updated" class="heading-meta"></span></h2><div class="view-body"></div></section>
       <section id="view-week" class="view"><h2>Week and weather</h2><div class="view-body"></div></section>
       <section id="view-heatmap" class="view"><h2>Typical week</h2><div class="view-body"></div></section>
       <section id="view-effect" class="view"><h2>Weather effect</h2><div class="view-body"></div></section>

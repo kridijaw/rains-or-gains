@@ -16,8 +16,8 @@ import {
   type LegendKey,
 } from "./chart";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
-import { berlin, WEEKDAYS } from "./time";
-import { describeSource, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
+import { berlin } from "./time";
+import { openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -32,6 +32,9 @@ export interface NowSummary {
   value: number | null;
   term: string | null;
   outlook: string | null;
+  updated: string;
+  /** Stale, failed or hidden sample; shown under the page header. */
+  status: HTMLElement | null;
 }
 
 interface Current {
@@ -109,26 +112,32 @@ function statusLine(kind: "warning" | "critical" | "info", label: string, text: 
   );
 }
 
-function hero(input: NowInput, t0: Today): HTMLElement {
-  const { now, body, model } = input;
+function updatedText({ now, body }: NowInput, cur: Current): string {
+  const latest = body.latest!;
+  if (cur.value === null) return `Last sample ${fmtTime(latest.ts)}, ${fmtAge(Math.max(0, now - latest.ts))}.`;
+  return `${cur.ts === latest.ts ? "Updated" : "Last good reading"} ${fmtTime(cur.ts)}, ${fmtAge(Math.max(0, now - cur.ts))}.`;
+}
+
+function status({ now, body }: NowInput): HTMLElement | null {
   const f = freshness(body.latest, now);
   const latest = body.latest;
+  if (!latest) return null;
+  if (f.state === "error") return statusLine("critical", "Fetch failed", `${latest.error} (${fmtTime(latest.ts)}, ${fmtAge(f.age)}).`);
+  if (f.state === "stale") return statusLine("warning", "Stale", `No new sample for ${fmtAge(f.age).replace(" ago", "")}. The logger may be down.`);
+  if (f.state === "hidden") return statusLine("info", "Hidden", "FitX is not showing the gauge for this studio right now.");
+  return null;
+}
+
+function hero(input: NowInput, t0: Today): HTMLElement {
+  const { now, body } = input;
+  const f = freshness(body.latest, now);
   const parts: (HTMLElement | null)[] = [];
 
-  if (f.state === "none" || !latest) {
+  if (f.state === "none" || !body.latest) {
     return el("div", { className: "now-hero" }, message("No samples yet. The first one arrives within 5 minutes of deploying."));
   }
 
-  if (f.state === "error") {
-    parts.push(statusLine("critical", "Fetch failed", `${latest.error} (${fmtTime(latest.ts)}, ${fmtAge(f.age)}).`));
-  } else if (f.state === "stale") {
-    parts.push(statusLine("warning", "Stale", `No new sample for ${fmtAge(f.age).replace(" ago", "")}. The logger may be down.`));
-  } else if (f.state === "hidden") {
-    parts.push(statusLine("info", "Hidden", "FitX is not showing the gauge for this studio right now."));
-  }
-
   const value = t0.cur?.value ?? null;
-  const valueTs = t0.cur?.ts ?? latest.ts;
   parts.push(
     el(
       "p",
@@ -138,37 +147,10 @@ function hero(input: NowInput, t0: Today): HTMLElement {
     ),
   );
   if (t0.text) {
-    const line = el("p", { className: "outlook" }, el("span", { text: t0.text.long }));
-    if (t0.hours && t0.outlook?.state === "open")
-      line.append(el("span", { className: "muted small", text: ` Open until ${fmtHour(t0.hours.close)}.` }));
-    parts.push(line);
+    parts.push(el("p", { className: "outlook" }, el("span", { text: t0.text.long })));
   }
   if (value !== null && value > 100) parts.push(message("FitX's scale goes past 100%. Shown as reported.", "muted small"));
-  parts.push(
-    message(
-      value === null
-        ? `Last sample ${fmtTime(latest.ts)}, ${fmtAge(f.age)}.`
-        : `${valueTs === latest.ts ? "Updated" : "Last good reading"} ${fmtTime(valueTs)}, ${fmtAge(now - valueTs)}.`,
-    ),
-  );
 
-  const { weekday, hour } = berlin(now);
-  const t = model.typical(weekday, hour);
-  const usual = el("p", { className: "usual" });
-  if (t.value !== null && isComparable(t.source)) {
-    usual.append(el("span", { text: "Usual for " }), el("span", { text: `${WEEKDAYS[weekday]} ${fmtHour(hour)}: ` }));
-    usual.append(el("strong", { text: fmtPct(t.value) }));
-    if (value !== null) {
-      const diff = Math.round(value - t.value);
-      usual.append(
-        el("span", { text: diff === 0 ? ", right on usual." : `, now ${Math.abs(diff)} points ${diff > 0 ? "above" : "below"}.` }),
-      );
-    }
-  }
-  if (usual.childElementCount) {
-    parts.push(usual);
-    parts.push(message(`Usual: ${describeSource(t.source, model)}.`, "muted small"));
-  }
   return el("div", { className: "now-hero" }, ...parts);
 }
 
@@ -262,13 +244,6 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral });
   blocks.push(chartBlock(null, chart, legend(keys)));
   if (valid.length === 0) blocks.unshift(message("No readings since midnight yet."));
-  if (ahead.length)
-    blocks.push(
-      message(
-        "Expected: the usual curve, shifted by how far today is off it right now. The shift fades out over the next hour or two.",
-        "muted small",
-      ),
-    );
 
   if (usualPts.length === 0 && model.profile) {
     const profilePts = model.profile[weekday].map((v, h) => ({ x: h + 0.5, v })).filter((d) => inDay(d.x));
@@ -308,5 +283,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 export function renderNow(root: HTMLElement, input: NowInput): NowSummary | null {
   const t0 = today(input);
   root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...todayChart(input, t0))));
-  return t0.cur ? { value: t0.cur.value, term: t0.cur.term, outlook: t0.text?.short ?? null } : null;
+  return t0.cur
+    ? { value: t0.cur.value, term: t0.cur.term, outlook: t0.text?.short ?? null, updated: updatedText(input, t0.cur), status: status(input) }
+    : null;
 }

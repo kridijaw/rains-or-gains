@@ -48,15 +48,10 @@ export function renderProgress(root: HTMLElement, p: DataProgress | null): void 
     root.hidden = true;
     return;
   }
-  root.hidden = false;
-  const lead = `Collecting since ${day(p.since)}, day ${p.days}.`;
   const steps = milestones(p);
-  if (steps.every((s) => s.done >= 1)) {
-    root.replaceChildren(el("p", { className: "progress-lead", text: `${lead} Every view now runs on own data.` }));
-    return;
-  }
+  root.hidden = steps.every((s) => s.done >= 1);
+  if (root.hidden) return;
   root.replaceChildren(
-    el("p", { className: "progress-lead", text: lead }),
     el(
       "ol",
       { className: "milestones" },

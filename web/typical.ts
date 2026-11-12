@@ -119,16 +119,3 @@ export function openHours(model: Pick<TypicalModel, "profile" | "own">, weekday:
   if (!own || own.filter((s) => s.mean !== null).length < MIN_OBSERVED_HOURS) return null;
   return span(own.map((s) => (s.mean ?? 0) >= 1));
 }
-
-export function describeSource(source: TypicalSource, model: Pick<TypicalModel, "scale" | "fitHours">): string {
-  switch (source) {
-    case "own":
-      return `own data, mean over at least ${MIN_WEEKS} weeks`;
-    case "profile-scaled":
-      return `FitX profile, scaled ×${model.scale?.toFixed(2)} to match ${model.fitHours} hours of own data`;
-    case "profile-relative":
-      return "FitX profile, relative shape only (unknown unit, not comparable to %)";
-    case "none":
-      return "no typical data yet";
-  }
-}

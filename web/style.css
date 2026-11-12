@@ -88,9 +88,18 @@ p {
   margin: 0 0 0.5rem;
 }
 
-.tagline {
+.header-status {
   flex-basis: 100%;
+}
+
+.header-status .status {
   margin: 0;
+}
+
+.heading-meta {
+  margin-left: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: normal;
   color: var(--muted);
 }
 
@@ -160,10 +169,6 @@ button {
   color: var(--muted);
 }
 
-.usual {
-  margin-top: 0.5rem;
-}
-
 .outlook {
   font-size: 1.1rem;
   font-weight: 500;
@@ -174,10 +179,6 @@ button {
   margin: 0 0 1rem;
   font-size: 0.85rem;
   color: var(--muted);
-}
-
-.progress-lead {
-  margin: 0 0 0.4rem;
 }
 
 .milestones {

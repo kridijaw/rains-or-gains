@@ -19,6 +19,8 @@ const select = document.querySelector<HTMLSelectElement>("#studio")!;
 const studioName = document.querySelector<HTMLElement>("#studio-name")!;
 const progress = document.querySelector<HTMLElement>("#progress")!;
 const sticky = document.querySelector<HTMLAnchorElement>("#sticky-now")!;
+const nowUpdated = document.querySelector<HTMLElement>("#now-updated")!;
+const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
 const views = { now: body("view-now"), week: body("view-week"), heatmap: body("view-heatmap"), effect: body("view-effect") };
 type View = keyof typeof views;
@@ -81,9 +83,16 @@ function draw(which: View[] = ALL): void {
     root.classList.remove("loading");
     try {
       if (view === "now") {
+        nowUpdated.textContent = "";
+        nowStatus.replaceChildren();
+        nowStatus.hidden = true;
         if (typeof s.nowBody === "string") root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
         else if (s.nowBody) {
-          updateSticky(renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) }), s.studio);
+          const summary = renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) });
+          nowUpdated.textContent = summary?.updated ?? "";
+          nowStatus.replaceChildren(...(summary?.status ? [summary.status] : []));
+          nowStatus.hidden = !summary?.status;
+          updateSticky(summary, s.studio);
           const hero = root.querySelector(".hero");
           heroWatcher.disconnect();
           if (hero) heroWatcher.observe(hero);

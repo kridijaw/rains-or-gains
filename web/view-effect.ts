@@ -12,7 +12,7 @@ import {
   type GroupStats,
   type Residual,
 } from "./series";
-import { describeSource, MIN_FIT_HOURS, MIN_WEEKS, type TypicalModel } from "./typical";
+import { MIN_FIT_HOURS, MIN_WEEKS, type TypicalModel } from "./typical";
 import { berlin } from "./time";
 import type { WeatherHour } from "./weather";
 
@@ -84,8 +84,6 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
         `So far: ${rows.length} hours over ${days} day${days === 1 ? "" : "s"}.`,
     ),
   ];
-  const sources = [...new Set(rows.map((r) => r.source))].map((s) => describeSource(s, model));
-  blocks.push(message(`Usual: ${sources.join("; ")}.`, "muted small"));
 
   const twoUp = width >= 760;
   const half = twoUp ? Math.floor((width - 24) / 2) : width;
@@ -107,7 +105,7 @@ export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
       .map((r) => ({ ...r, wet: (r.precipitation as number) > 0 ? "Rain" : "Dry" }));
     blocks.push(
       chartBlock(
-        "Residual vs temperature",
+        null,
         Plot.plot({
           width,
           height: 260,

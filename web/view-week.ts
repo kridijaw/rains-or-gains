@@ -18,7 +18,7 @@ import {
 import { dayKind, holidayCalendar, type Holiday } from "./holidays";
 import { dailyPrecipitation, dayTicks, hourSeries, usualValue } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
-import { describeSource, openHours, type TypicalModel } from "./typical";
+import { openHours, type TypicalModel } from "./typical";
 import type { WeatherHour } from "./weather";
 
 export const RANGES = [7, 30, 90] as const;
@@ -96,8 +96,6 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
 
   if (withData.length === 0) {
     blocks.push(message(`No occupancy data in the last ${days} days yet.`));
-  } else if (withData[0].ts > from + 86400) {
-    blocks.push(message(`Own data starts ${fmtDate(withData[0].ts)}.`, "muted small"));
   }
 
   const occupancy = Plot.plot({
@@ -153,8 +151,6 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
   if (school.length) keys.push({ label: "School holidays", key: "ribbon", color: c.neutral });
   if (publicDays.length) keys.push({ label: "Public holiday", key: "triangle", color: c.muted });
   blocks.push(chartBlock("Occupancy, %", occupancy, legend(keys)));
-  const source = model.typical(berlin(now).weekday, berlin(now).hour).source;
-  if (hasBand) blocks.push(message(`Usual: ${describeSource(source, model)}.`, "muted small"));
   if (typeof holidays === "string") blocks.push(message(`Holidays unavailable: ${holidays}`, "error small"));
 
   if (weather === null) {
