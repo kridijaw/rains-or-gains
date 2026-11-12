@@ -334,6 +334,8 @@ select:hover {
 }
 
 .progress {
+  position: relative;
+  z-index: 2;
   margin: 0 0 1rem;
   padding: 0.85rem 1.25rem;
   border: 1px solid var(--border);
@@ -365,6 +367,67 @@ select:hover {
 .milestones .done .milestone-label::after {
   content: " ✓";
   color: var(--series-3);
+}
+
+.milestone-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.info {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  color: var(--faint);
+  cursor: help;
+}
+
+.info:hover,
+.info:focus-visible {
+  color: var(--text);
+}
+
+.info-icon {
+  display: grid;
+  place-items: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font: italic 700 0.62rem/1 Georgia, serif;
+}
+
+.info-tip {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  width: max-content;
+  max-width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-align: left;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.15s, transform 0.15s var(--ease);
+}
+
+.info:hover .info-tip,
+.info:focus .info-tip {
+  opacity: 1;
+  transform: none;
 }
 
 .bar {

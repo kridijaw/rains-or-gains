@@ -58,15 +58,21 @@ export function renderProgress(root: HTMLElement, p: DataProgress | null): void 
       ...steps.map((s) => {
         const bar = el("span", { className: "bar" }, el("span", { className: "bar-fill" }));
         bar.style.setProperty("--done", String(Math.max(0.02, s.done)));
-        const item = el(
+        const info = el(
+          "button",
+          { className: "info" },
+          el("span", { className: "info-icon", text: "i" }),
+          el("span", { className: "info-tip", text: s.detail }),
+        );
+        info.type = "button";
+        info.firstElementChild!.setAttribute("aria-hidden", "true");
+        info.lastElementChild!.setAttribute("role", "tooltip");
+        return el(
           "li",
           { className: s.done >= 1 ? "done" : "" },
-          el("span", { className: "milestone-label", text: s.label }),
+          el("span", { className: "milestone-head" }, el("span", { className: "milestone-label", text: s.label }), info),
           bar,
-          el("span", { className: "milestone-detail", text: s.detail }),
         );
-        item.setAttribute("aria-label", `${s.label}: ${s.detail}`);
-        return item;
       }),
     ),
   );
