@@ -1,7 +1,7 @@
 import type { HourlyTuple, LatestSample } from "./api";
 import { dayKind, type Holiday, holidayCalendar } from "./holidays";
 import { addDays, berlin, daysBetween, hourFloor, startOfDay } from "./time";
-import type { TypicalModel, TypicalSource } from "./typical";
+import { MIN_WEEKS, openHours, type OpenHours, type TypicalModel, type TypicalSource } from "./typical";
 import type { WeatherHour } from "./weather";
 
 export const STALE_AFTER = 15 * 60;
@@ -205,4 +205,119 @@ export function groupStats<T, G extends string>(
       median: median(values),
     };
   });
+}
+
+export interface Slot {
+  hour: number;
+  v: number;
+}
+
+export interface Outlook {
+  state: "before" | "open" | "after";
+  hours: OpenHours;
+  /** Rest of today, from now to the last open hour; x is the Berlin hour of day. */
+  expected: { x: number; v: number }[];
+  /** Quietest hour left, only if clearly quieter than now. */
+  best: Slot | null;
+  /** First hour clearly quieter than now. */
+  quieterFrom: Slot | null;
+  peak: Slot | null;
+}
+
+/** Hours over which today's difference from usual fades back to the usual curve. */
+export const OUTLOOK_DECAY_H = 1.5;
+const QUIETER_BY = 10;
+const BEST_BY = 5;
+
+export function outlook(
+  usual: readonly (number | null)[],
+  hours: OpenHours | null,
+  nowX: number,
+  current: number | null,
+): Outlook | null {
+  if (usual.every((v) => v === null)) return null;
+  const h = hours ?? { open: 0, close: 24 };
+  const state = nowX < h.open ? "before" : nowX >= h.close ? "after" : "open";
+  const here = usual[Math.floor(nowX)] ?? null;
+  const shift = state === "open" && current !== null && here !== null ? current - here : 0;
+  const at = (x: number): number | null => {
+    const u = usual[Math.floor(x)] ?? null;
+    return u === null ? null : Math.max(0, u + shift * Math.exp(-(x - nowX) / OUTLOOK_DECAY_H));
+  };
+
+  const slots: Slot[] = [];
+  if (state !== "after")
+    for (let hour = Math.max(h.open, Math.floor(nowX) + 1); hour < h.close; hour++) {
+      const v = at(hour + 0.5);
+      if (v !== null) slots.push({ hour, v });
+    }
+  const expected: { x: number; v: number }[] = [];
+  if (state === "open") {
+    const start = current ?? at(nowX);
+    if (start !== null) expected.push({ x: nowX, v: start });
+    if (Math.floor(nowX) + 0.5 > nowX && here !== null) expected.push({ x: Math.floor(nowX) + 0.5, v: at(Math.floor(nowX) + 0.5)! });
+    expected.push(...slots.map((s) => ({ x: s.hour + 0.5, v: s.v })));
+  }
+
+  const ref = state === "open" ? current : null;
+  const min = slots.reduce<Slot | null>((a, s) => (a === null || s.v < a.v ? s : a), null);
+  const peak = slots.reduce<Slot | null>((a, s) => (a === null || s.v > a.v ? s : a), null);
+  return {
+    state,
+    hours: h,
+    expected,
+    best: min && (ref === null || min.v <= ref - BEST_BY) ? min : null,
+    quieterFrom: ref === null ? null : (slots.find((s) => s.v <= ref - QUIETER_BY) ?? null),
+    peak,
+  };
+}
+
+/** Days of own data before the weather comparison is worth reading. */
+export const EFFECT_DAYS = 28;
+
+export interface DataProgress {
+  /** Berlin date of the first own sample */
+  since: string | null;
+  days: number;
+  profile: boolean;
+  fitHours: number;
+  /** The usual value is on the percentage scale somewhere (scaled profile or own means). */
+  onScale: boolean;
+  /** Share of open weekday x hour cells whose usual value comes from own data. */
+  ownShare: number;
+  ownCompleteFrom: string | null;
+  comparableHours: number;
+  effectFrom: string | null;
+}
+
+export function dataProgress(hourly: readonly HourlyTuple[], model: TypicalModel, now: number): DataProgress {
+  const first = hourly.find((r) => r[1] !== null);
+  const since = first ? berlin(first[0]).date : null;
+  let open = 0;
+  let own = 0;
+  for (let d = 0; d < 7; d++) {
+    const h = openHours(model, d) ?? { open: 0, close: 24 };
+    for (let hour = h.open; hour < h.close; hour++) {
+      open++;
+      if (model.own[d][hour].weeks >= MIN_WEEKS) own++;
+    }
+  }
+  const usual = usualValue(model);
+  const comparableHours = hourly.filter(([ts, avg, , n]) => {
+    if (avg === null || n <= 0) return false;
+    const { weekday, hour } = berlin(ts);
+    return usual(weekday, hour) !== null;
+  }).length;
+  return {
+    since,
+    days: dataDays(hourly, now),
+    profile: model.profile !== null,
+    fitHours: model.fitHours,
+    onScale: model.scale !== null || own > 0,
+    ownShare: open ? own / open : 0,
+    // The first day is partial, so the last weekday sees its third full day 3 weeks later.
+    ownCompleteFrom: since && addDays(since, 7 * MIN_WEEKS),
+    comparableHours,
+    effectFrom: since && addDays(since, EFFECT_DAYS),
+  };
 }

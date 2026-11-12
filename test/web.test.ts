@@ -4,12 +4,15 @@ import { readCache, writeCache, type Store } from "../web/cache";
 import {
   dailyPrecipitation,
   dataDays,
+  dataProgress,
   dayTicks,
   freshness,
   groupStats,
   hourOfDay,
   hourSeries,
   lastGood,
+  outlook,
+  OUTLOOK_DECAY_H,
   rainBucket,
   residuals,
   termLabel,
@@ -17,7 +20,7 @@ import {
 } from "../web/series";
 import { dayKind, holidayCalendar, parseHolidays, yearsBetween } from "../web/holidays";
 import { addDays, berlin, daysBetween, hourFloor, lastDays, startOfDay } from "../web/time";
-import { buildTypical, cellStats, describeSource, fitScale, MIN_FIT_HOURS, typicalDay } from "../web/typical";
+import { buildTypical, cellStats, describeSource, fitScale, MIN_FIT_HOURS, openHours, typicalDay } from "../web/typical";
 import { mergeWeather, parseOpenMeteo, weatherRequests } from "../web/weather";
 
 const utc = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) / 1000;
@@ -94,6 +97,14 @@ describe("typical", () => {
     expect(model.typical(4, 20).source).toBe("profile-scaled");
     expect(model.typical(4, 20).value).toBeCloseTo(0.8 * profile[4][20], 10);
     expect(describeSource("profile-scaled", model)).toContain("×0.80");
+  });
+
+  it("derives opening hours from the profile, else from fully observed own days", () => {
+    expect(openHours(buildTypical([], profile), 0)).toEqual({ open: 6, close: 24 });
+    const day: HourlyTuple[] = Array.from({ length: 24 }, (_, h) => [at("2026-11-09", h), h < 7 || h >= 22 ? 0 : 40, 50, 12]);
+    expect(openHours(buildTypical(day, null), 0)).toEqual({ open: 7, close: 22 });
+    expect(openHours(buildTypical(day.slice(18), null), 0)).toBeNull();
+    expect(openHours(buildTypical(day, null), 1)).toBeNull();
   });
 
   it("reports none without data or a valid profile", () => {
@@ -305,5 +316,56 @@ describe("series", () => {
       { group: "high", n: 1, mean: 10, median: 10 },
       { group: "none", n: 0, mean: null, median: null },
     ]);
+  });
+
+  describe("outlook", () => {
+    const usual = Array.from({ length: 24 }, (_, h) => ({ 18: 80, 19: 80, 20: 60, 21: 40, 22: 30 })[h] ?? (h >= 6 && h < 23 ? 50 : null));
+    const hours = { open: 6, close: 23 };
+
+    it("finds the first clearly quieter hour and the quietest one left", () => {
+      const o = outlook(usual, hours, 18.5, 80)!;
+      expect(o.state).toBe("open");
+      expect(o.quieterFrom).toEqual({ hour: 20, v: 60 });
+      expect(o.best).toEqual({ hour: 22, v: 30 });
+      expect(o.peak).toEqual({ hour: 19, v: 80 });
+      expect(o.expected.map((e) => e.x)).toEqual([18.5, 19.5, 20.5, 21.5, 22.5]);
+    });
+
+    it("shifts the usual curve by today's difference and lets it fade", () => {
+      const o = outlook(usual, hours, 18.5, 100)!;
+      expect(o.expected[0]).toEqual({ x: 18.5, v: 100 });
+      expect(o.expected[1].v).toBeCloseTo(80 + 20 * Math.exp(-1 / OUTLOOK_DECAY_H), 10);
+      expect(outlook(usual, hours, 18.5, 30)!.best).toBeNull();
+    });
+
+    it("handles closed hours and missing usual values", () => {
+      const before = outlook(usual, hours, 3, 0)!;
+      expect(before.state).toBe("before");
+      expect(before.best).toEqual({ hour: 22, v: 30 });
+      expect(before.expected).toEqual([]);
+      const after = outlook(usual, hours, 23.5, 5)!;
+      expect(after.state).toBe("after");
+      expect(after.best).toBeNull();
+      expect(outlook(Array(24).fill(null), hours, 12, 50)).toBeNull();
+    });
+  });
+
+  it("summarises how far data collection has come", () => {
+    const rows: HourlyTuple[] = [];
+    for (let h = 6; h < 6 + MIN_FIT_HOURS; h++) rows.push([at("2026-11-11", h), 0.8 * profile[2][h], 100, 12]);
+    const model = buildTypical(rows, profile);
+    const p = dataProgress(rows, model, at("2026-11-12", 10));
+    expect(p).toMatchObject({
+      since: "2026-11-11",
+      days: 2,
+      profile: true,
+      fitHours: MIN_FIT_HOURS,
+      onScale: true,
+      ownShare: 0,
+      ownCompleteFrom: "2026-12-02",
+      comparableHours: MIN_FIT_HOURS,
+      effectFrom: "2026-12-09",
+    });
+    expect(dataProgress([], buildTypical([], null), at("2026-11-12", 10))).toMatchObject({ since: null, onScale: false });
   });
 });

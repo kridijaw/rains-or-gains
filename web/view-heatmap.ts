@@ -1,11 +1,15 @@
 import * as Plot from "@observablehq/plot";
-import { chartBlock, dataTable, el, fmtHour, fmtPct, message, theme } from "./chart";
+import { chartBlock, dataTable, fmtHour, fmtPct, fmtSigned, message, segmented, theme } from "./chart";
 import { WEEKDAYS } from "./time";
-import { MIN_WEEKS, type TypicalModel } from "./typical";
+import { MIN_WEEKS, openHours, type TypicalModel } from "./typical";
+
+export type HeatMode = "own" | "fitx" | "diff";
 
 export interface HeatmapInput {
   model: TypicalModel;
   width: number;
+  mode: HeatMode | null;
+  onMode(mode: HeatMode): void;
 }
 
 interface Cell {
@@ -16,13 +20,21 @@ interface Cell {
   weeks: number;
 }
 
-const HOURS = Array.from({ length: 24 }, (_, h) => h);
 const MARGIN_LEFT = 36;
 
-function heatmap(cells: Cell[], width: number, domainMax: number, label: string, title: (d: Cell) => string, fade: boolean) {
+function heatmap(
+  cells: Cell[],
+  hours: number[],
+  width: number,
+  color: Plot.ScaleOptions,
+  title: (d: Cell) => string,
+  fade: boolean,
+) {
   const c = theme();
-  const rowHeight = Math.min(26, Math.max(16, Math.floor((width - MARGIN_LEFT - 8) / 24)));
-  const filled = cells.filter((d) => d.value !== null);
+  const cellWidth = (width - MARGIN_LEFT - 8) / hours.length;
+  const rowHeight = Math.round(Math.min(34, Math.max(18, cellWidth * 0.7)));
+  const shown = cells.filter((d) => hours.includes(d.hour));
+  const filled = shown.filter((d) => d.value !== null);
   return Plot.plot({
     width,
     height: 7 * rowHeight + 30,
@@ -30,19 +42,11 @@ function heatmap(cells: Cell[], width: number, domainMax: number, label: string,
     marginRight: 8,
     marginTop: 4,
     padding: 0,
-    x: { domain: HOURS, ticks: [0, 6, 12, 18], tickFormat: fmtHour, tickSize: 0, label: null },
+    x: { domain: hours, ticks: hours.filter((h) => h % (cellWidth < 16 ? 6 : cellWidth < 30 ? 3 : 2) === 0), tickFormat: fmtHour, tickSize: 0, label: null },
     y: { domain: [...WEEKDAYS], tickSize: 0, label: null },
-    color: {
-      type: "linear",
-      domain: [0, domainMax],
-      range: [c.seqLo, c.seqHi],
-      interpolate: "lab",
-      legend: true,
-      label,
-      width: Math.min(260, width - 20),
-    },
+    color: { legend: true, width: Math.min(280, width - 20), ...color },
     marks: [
-      Plot.cell(cells, { x: "hour", y: "weekday", fill: c.grid, fillOpacity: 0.5, inset: 1, r: 2 }),
+      Plot.cell(shown, { x: "hour", y: "weekday", fill: c.grid, fillOpacity: 0.5, inset: 1, r: 2 }),
       Plot.cell(filled, {
         x: "hour",
         y: "weekday",
@@ -57,63 +61,117 @@ function heatmap(cells: Cell[], width: number, domainMax: number, label: string,
   });
 }
 
-export function renderHeatmap(root: HTMLElement, { model, width }: HeatmapInput): void {
-  const twoUp = width >= 760;
-  const w = twoUp ? Math.floor((width - 24) / 2) : width;
+/** Earliest opening to latest closing over the week, so all rows share one x axis. */
+function weekHours(model: TypicalModel): number[] {
+  const spans = WEEKDAYS.map((_, d) => openHours(model, d)).filter((h) => h !== null);
+  const open = spans.length ? Math.min(...spans.map((h) => h.open)) : 0;
+  const close = spans.length ? Math.max(...spans.map((h) => h.close)) : 24;
+  return Array.from({ length: close - open }, (_, i) => open + i);
+}
+
+const weeksLabel = (d: Cell) => `${d.n} samples, ${d.weeks} week${d.weeks === 1 ? "" : "s"}`;
+
+/** Returns false when there is nothing to show yet. */
+export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }: HeatmapInput): boolean {
+  const c = theme();
+  const hours = weekHours(model);
+  const scale = model.scale;
   const own: Cell[] = model.own.flatMap((row, d) =>
     row.map((s, h) => ({ weekday: WEEKDAYS[d], hour: h, value: s.mean, n: s.n, weeks: s.weeks })),
   );
-  const scale = model.scale;
   const profile: Cell[] = model.profile
     ? model.profile.flatMap((row, d) =>
         row.map((v, h) => ({ weekday: WEEKDAYS[d], hour: h, value: scale === null ? v : v * scale, n: 0, weeks: 0 })),
       )
     : [];
+  const diff: Cell[] =
+    scale === null ? [] : own.map((d, i) => ({ ...d, value: d.value === null ? null : d.value - (profile[i].value ?? 0) }));
+
+  const hasOwn = own.some((d) => d.value !== null);
+  const modes: { value: HeatMode; label: string }[] = [];
+  if (hasOwn) modes.push({ value: "own", label: "Own data" });
+  if (model.profile) modes.push({ value: "fitx", label: "FitX profile" });
+  if (hasOwn && scale !== null) modes.push({ value: "diff", label: "Difference" });
+  if (modes.length === 0) {
+    root.replaceChildren(message("Fills in once the first hours are logged or the FitX profile is fetched."));
+    return false;
+  }
+  const current = modes.find((m) => m.value === mode)?.value ?? modes[0].value;
 
   const ownMax = Math.max(0, ...own.map((d) => d.value ?? 0));
   const profileMax = Math.max(0, ...profile.map((d) => d.value ?? 0));
-  const shared = scale !== null;
-  const ownDomain = Math.max(100, shared ? Math.max(ownMax, profileMax) : ownMax);
+  const pctDomain = Math.max(100, scale !== null ? Math.max(ownMax, profileMax) : ownMax);
+  const pctColor = (label: string): Plot.ScaleOptions => ({
+    type: "linear",
+    domain: [0, pctDomain],
+    range: [c.seqLo, c.seqHi],
+    interpolate: "lab",
+    label,
+  });
 
-  const hasOwn = own.some((d) => d.value !== null);
-  const faded = own.some((d) => d.value !== null && d.weeks < MIN_WEEKS);
-  const ownBlock = chartBlock(
-    "Own data, mean per weekday and hour",
-    heatmap(
-      own,
-      w,
-      ownDomain,
-      "Mean occupancy, %",
-      (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtPct(d.value)} mean\n${d.n} samples, ${d.weeks} week${d.weeks === 1 ? "" : "s"}`,
-      true,
-    ),
-    !hasOwn && message("No own data yet. Cells fill in hour by hour."),
-    faded && message(`Faded cells have fewer than ${MIN_WEEKS} weeks of data; the usual value falls back to the FitX profile there.`, "muted small"),
-  );
-
-  const profileBlock = model.profile
-    ? chartBlock(
-        shared ? `FitX profile, scaled ×${scale?.toFixed(2)} to %` : "FitX profile, relative units",
+  const blocks: (HTMLElement | false)[] = [modes.length > 1 && segmented(modes, current, onMode, "Heatmap")];
+  if (current === "own") {
+    const faded = own.some((d) => d.value !== null && d.weeks < MIN_WEEKS);
+    blocks.push(
+      chartBlock(
+        "Own data, mean per weekday and hour",
+        heatmap(
+          own,
+          hours,
+          width,
+          pctColor("Mean occupancy, %"),
+          (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtPct(d.value)} mean\n${weeksLabel(d)}`,
+          true,
+        ),
+        faded &&
+          message(`Faded cells have fewer than ${MIN_WEEKS} weeks of data; the usual value falls back to the FitX profile there.`, "muted small"),
+      ),
+    );
+  } else if (current === "fitx") {
+    const shared = scale !== null;
+    blocks.push(
+      chartBlock(
+        shared ? `FitX profile, scaled ×${scale.toFixed(2)} to %` : "FitX profile, relative units",
         heatmap(
           profile,
-          w,
-          shared ? ownDomain : Math.max(1, profileMax),
-          shared ? "Scaled profile, %" : "Relative (unknown unit)",
+          hours,
+          width,
+          shared
+            ? pctColor("Scaled profile, %")
+            : { ...pctColor("Relative (unknown unit)"), domain: [0, Math.max(1, profileMax)] },
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${shared ? fmtPct(d.value) : Math.round(d.value ?? 0)}`,
           false,
         ),
         message(
           shared
-            ? `Scale fitted on ${model.fitHours} hours of own data, so both maps share one colour scale.`
+            ? `Scale fitted on ${model.fitHours} hours of own data, so it shares the colour scale with the own data map.`
             : "Not on the % scale until enough own data overlaps it.",
           "muted small",
         ),
-      )
-    : chartBlock("FitX profile", message("No FitX profile fetched yet. It is snapshotted daily at 03:07 UTC."));
+      ),
+    );
+  } else {
+    const m = Math.max(10, ...diff.filter((d) => hours.includes(d.hour)).map((d) => Math.abs(d.value ?? 0)));
+    blocks.push(
+      chartBlock(
+        "Own data minus scaled FitX profile",
+        heatmap(
+          diff,
+          hours,
+          width,
+          { type: "linear", domain: [-m, 0, m], range: [c.divLo, c.divMid, c.divHi], interpolate: "lab", label: "Points, own minus FitX" },
+          (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtSigned(d.value, " points")}\n${weeksLabel(d)}`,
+          true,
+        ),
+        message("Red: busier than FitX's own history says. Blue: quieter. Faded cells rest on fewer than 3 weeks.", "muted small"),
+      ),
+    );
+  }
 
-  const rows = WEEKDAYS.map((name, d) => [name, ...model.own[d].map((s) => (s.mean === null ? "" : Math.round(s.mean)))]);
-  root.replaceChildren(
-    el("div", { className: twoUp ? "pair" : "stack" }, ownBlock, profileBlock),
-    hasOwn ? dataTable("Own means as a table (%)", ["", ...HOURS.map((h) => String(h))], rows) : "",
-  );
+  if (hasOwn) {
+    const rows = WEEKDAYS.map((name, d) => [name, ...hours.map((h) => model.own[d][h].mean).map((v) => (v === null ? "" : Math.round(v)))]);
+    blocks.push(dataTable("Own means as a table (%)", ["", ...hours.map((h) => String(h))], rows));
+  }
+  root.replaceChildren(...blocks.filter((b): b is HTMLElement => b !== false));
+  return true;
 }

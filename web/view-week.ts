@@ -3,7 +3,6 @@ import type { HourlyTuple } from "./api";
 import {
   chartBlock,
   dataTable,
-  el,
   fmtDate,
   fmtDateTime,
   fmtDayMonth,
@@ -12,13 +11,14 @@ import {
   legend,
   MARGIN,
   message,
+  segmented,
   theme,
   type LegendKey,
 } from "./chart";
 import { dayKind, holidayCalendar, type Holiday } from "./holidays";
 import { dailyPrecipitation, dayTicks, hourSeries, usualValue } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
-import { describeSource, type TypicalModel } from "./typical";
+import { describeSource, openHours, type TypicalModel } from "./typical";
 import type { WeatherHour } from "./weather";
 
 export const RANGES = [7, 30, 90] as const;
@@ -35,18 +35,26 @@ export interface WeekInput {
   onRange(days: RangeDays): void;
 }
 
-function rangePicker(current: RangeDays, onRange: (days: RangeDays) => void): HTMLElement {
-  return el(
-    "div",
-    { className: "range" },
-    ...RANGES.map((d) => {
-      const b = el("button", { text: `${d} days` });
-      b.type = "button";
-      b.setAttribute("aria-pressed", String(d === current));
-      b.addEventListener("click", () => d !== current && onRange(d));
-      return b;
-    }),
+const rangePicker = (current: RangeDays, onRange: (days: RangeDays) => void): HTMLElement =>
+  segmented(
+    RANGES.map((d) => ({ value: d, label: `${d} days` })),
+    current,
+    onRange,
+    "Time range",
   );
+
+// Night shading turns into noise at 30 and 90 days, so only the 7 day view gets it.
+function closedSpans(model: TypicalModel, from: number, to: number): { x1: number; x2: number }[] {
+  const spans: { x1: number; x2: number }[] = [];
+  for (let date = berlin(from).date; startOfDay(date) < to; date = addDays(date, 1)) {
+    const h = openHours(model, berlin(startOfDay(date) + 12 * 3600).weekday);
+    if (!h) continue;
+    const start = startOfDay(date);
+    const end = startOfDay(addDays(date, 1));
+    if (h.open > 0) spans.push({ x1: start, x2: start + h.open * 3600 });
+    if (h.close < 24) spans.push({ x1: start + h.close * 3600, x2: end });
+  }
+  return spans.map((s) => ({ x1: Math.max(from, s.x1), x2: Math.min(to, s.x2) })).filter((s) => s.x2 > s.x1);
 }
 
 function xAxis(from: number, to: number, days: RangeDays, width: number) {
@@ -83,7 +91,8 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
     .filter((h) => h.kind === "public")
     .map((h) => ({ ...h, x: startOfDay(h.start) + 12 * 3600 }))
     .filter((h) => h.x >= from && h.x <= to);
-  const yMax = Math.max(100, ...withData.map((p) => p.avg), ...pts.map((p) => p.typical ?? 0));
+  const yMax = Math.ceil(Math.max(100, ...withData.map((p) => p.avg), ...pts.map((p) => p.typical ?? 0)) / 20) * 20;
+  const closed = days === 7 ? closedSpans(model, from, to) : [];
 
   if (withData.length === 0) {
     blocks.push(message(`No occupancy data in the last ${days} days yet.`));
@@ -96,9 +105,18 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
     height: 220,
     ...MARGIN,
     x,
-    y: { domain: [0, yMax], nice: true, grid: true, label: "%" },
+    y: { domain: [0, yMax], grid: true, label: "%" },
     marks: [
-      Plot.rect(school, { x1: "x1", x2: "x2", fill: c.neutral, fillOpacity: 0.14 }),
+      Plot.rect(closed, { x1: "x1", x2: "x2", fill: c.neutral, fillOpacity: 0.1 }),
+      Plot.rect(school, {
+        x1: "x1",
+        x2: "x2",
+        y1: yMax * 0.965,
+        y2: yMax,
+        fill: c.neutral,
+        fillOpacity: 0.6,
+        title: (h) => `${h.name}\n${fmtDate(startOfDay(h.start))} to ${fmtDate(startOfDay(h.end))}`,
+      }),
       Plot.ruleX(publicDays, { x: "x", stroke: c.faint, strokeWidth: 1 }),
       Plot.dot(publicDays, {
         x: "x",
@@ -131,11 +149,12 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
     { label: "Hourly mean", key: "line", color: c.occupancy },
   ];
   if (hasBand) keys.push({ label: "Usual", key: "wash", color: c.occupancy });
-  if (school.length) keys.push({ label: "School holidays", key: "wash", color: c.neutral });
+  if (closed.length) keys.push({ label: "Closed", key: "wash", color: c.neutral });
+  if (school.length) keys.push({ label: "School holidays", key: "ribbon", color: c.neutral });
   if (publicDays.length) keys.push({ label: "Public holiday", key: "triangle", color: c.muted });
   blocks.push(chartBlock("Occupancy, %", occupancy, legend(keys)));
   const source = model.typical(berlin(now).weekday, berlin(now).hour).source;
-  blocks.push(message(`${hasBand ? "Usual" : "No usual band yet"}: ${describeSource(source, model)}.`, "muted small"));
+  if (hasBand) blocks.push(message(`Usual: ${describeSource(source, model)}.`, "muted small"));
   if (typeof holidays === "string") blocks.push(message(`Holidays unavailable: ${holidays}`, "error small"));
 
   if (weather === null) {
@@ -143,25 +162,6 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
   } else if (typeof weather === "string") {
     blocks.push(message(`Weather unavailable: ${weather}`, "error"));
   } else {
-    const temps = weather.filter((w) => w.temperature !== null);
-    blocks.push(
-      chartBlock(
-        "Temperature, °C",
-        Plot.plot({
-          width,
-          height: 120,
-          ...MARGIN,
-          x,
-          y: { grid: true, nice: true, label: null },
-          marks: [
-            Plot.line(weather, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2 }),
-            Plot.ruleX(temps, Plot.pointerX({ x: "ts", stroke: c.faint })),
-            Plot.tip(temps, Plot.pointerX({ x: "ts", y: "temperature", title: (w) => `${fmtDateTime(w.ts)}\n${w.temperature} °C` })),
-          ],
-        }),
-      ),
-    );
-
     const hourlyBars = days === 7;
     const bars = hourlyBars
       ? weather
@@ -170,36 +170,62 @@ export function renderWeek(root: HTMLElement, input: WeekInput): void {
       : dailyPrecipitation(weather)
           .filter((d) => d.end > from)
           .map((d) => ({ x1: Math.max(from, d.start), x2: d.end, mm: d.precipitation ?? 0, label: fmtDate(d.start) }));
+    const dry = bars.every((b) => b.mm === 0);
+    const temps = weather.filter((w) => w.temperature !== null);
+    const temperature = Plot.plot({
+      width,
+      height: dry ? 110 : 90,
+      ...MARGIN,
+      ...(dry ? {} : { marginBottom: 6 }),
+      x: dry ? x : { ...x, axis: null },
+      y: { grid: true, nice: true, label: "°C", ticks: 3 },
+      marks: [
+        Plot.line(weather, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2 }),
+        Plot.ruleX(temps, Plot.pointerX({ x: "ts", stroke: c.faint })),
+        Plot.tip(temps, Plot.pointerX({ x: "ts", y: "temperature", title: (w) => `${fmtDateTime(w.ts)}\n${w.temperature} °C` })),
+      ],
+    });
+
     const maxMm = Math.max(1, ...bars.map((b) => b.mm));
+    const rain =
+      !dry &&
+      Plot.plot({
+        width,
+        height: 84,
+        ...MARGIN,
+        x,
+        y: { domain: [0, maxMm], nice: true, grid: true, label: hourlyBars ? "mm/h" : "mm/day", ticks: 2 },
+        marks: [
+          Plot.rectY(bars, {
+            x1: "x1",
+            x2: "x2",
+            y: "mm",
+            fill: c.rain,
+            insetLeft: hourlyBars ? 0.5 : 1,
+            insetRight: hourlyBars ? 0.5 : 1,
+            ry2: hourlyBars ? 0 : 3,
+          }),
+          Plot.ruleY([0], { stroke: c.baseline }),
+          Plot.tip(
+            bars.filter((b) => b.mm > 0),
+            Plot.pointerX({ x1: "x1", x2: "x2", y: "mm", title: (b) => `${b.label}\n${b.mm.toFixed(1)} mm` }),
+          ),
+        ],
+      });
+
+    const weatherKeys: { label: string; key: LegendKey; color: string }[] = [
+      { label: "Temperature, °C", key: "line", color: c.temperature },
+    ];
+    if (!dry) weatherKeys.push({ label: hourlyBars ? "Precipitation, mm per hour" : "Precipitation, mm per day", key: "bar", color: c.rain });
     blocks.push(
       chartBlock(
-        hourlyBars ? "Precipitation, mm per hour" : "Precipitation, mm per day",
-        Plot.plot({
-          width,
-          height: 100,
-          ...MARGIN,
-          x,
-          y: { domain: [0, maxMm], nice: true, grid: true, label: null, ticks: 3 },
-          marks: [
-            Plot.rectY(bars, {
-              x1: "x1",
-              x2: "x2",
-              y: "mm",
-              fill: c.rain,
-              insetLeft: hourlyBars ? 0.5 : 1,
-              insetRight: hourlyBars ? 0.5 : 1,
-              ry2: hourlyBars ? 0 : 4,
-            }),
-            Plot.ruleY([0], { stroke: c.baseline }),
-            Plot.tip(
-              bars.filter((b) => b.mm > 0),
-              Plot.pointerX({ x1: "x1", x2: "x2", y: "mm", title: (b) => `${b.label}\n${b.mm.toFixed(1)} mm` }),
-            ),
-          ],
-        }),
+        "Weather",
+        temperature,
+        rain,
+        legend(weatherKeys),
+        dry && message("No precipitation in this period.", "muted small"),
       ),
     );
-    if (bars.every((b) => b.mm === 0)) blocks.push(message("No precipitation in this period.", "muted small"));
   }
 
   blocks.push(dayTable(input, weather, from, to));

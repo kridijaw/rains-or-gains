@@ -56,12 +56,23 @@ function strip<G extends string>(rows: Residual[], stats: GroupStats<G>[], group
   });
 }
 
-export function renderEffect(root: HTMLElement, input: EffectInput): void {
+/** Returns false while there is nothing to compare yet. */
+export function renderEffect(root: HTMLElement, input: EffectInput): boolean {
   const { now, hourly, model, weather, holidays, width } = input;
   const c = theme();
   const weatherRows = Array.isArray(weather) ? weather : [];
   const rows = residuals(hourly, model, weatherRows, Array.isArray(holidays) ? holidays : []);
   const days = dataDays(hourly, now);
+  if (rows.length === 0) {
+    root.replaceChildren(
+      message(
+        model.scale === null && !model.own.some((r) => r.some((s) => s.weeks >= MIN_WEEKS))
+          ? `Appears once the usual value is on the % scale (${MIN_FIT_HOURS} hours of own data overlapping the FitX profile).`
+          : "Nothing to compare yet.",
+      ),
+    );
+    return false;
+  }
   const blocks: (HTMLElement | false)[] = [
     message(
       `Residual = hourly mean minus the usual value for that weekday and hour. ` +
@@ -69,18 +80,6 @@ export function renderEffect(root: HTMLElement, input: EffectInput): void {
         `So far: ${rows.length} hours over ${days} day${days === 1 ? "" : "s"}.`,
     ),
   ];
-
-  if (rows.length === 0) {
-    blocks.push(
-      message(
-        model.scale === null && !model.own.some((r) => r.some((s) => s.weeks >= MIN_WEEKS))
-          ? `Nothing to compare yet: the usual value needs ${MIN_FIT_HOURS} hours of own data overlapping the FitX profile first.`
-          : "Nothing to compare yet.",
-      ),
-    );
-    root.replaceChildren(...blocks.filter((b): b is HTMLElement => b !== false));
-    return;
-  }
   const sources = [...new Set(rows.map((r) => r.source))].map((s) => describeSource(s, model));
   blocks.push(message(`Usual: ${sources.join("; ")}.`, "muted small"));
 
@@ -165,4 +164,5 @@ export function renderEffect(root: HTMLElement, input: EffectInput): void {
     ),
   );
   root.replaceChildren(...blocks.filter((b): b is HTMLElement => b !== false));
+  return true;
 }

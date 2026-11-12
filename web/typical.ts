@@ -99,6 +99,27 @@ export function buildTypical(hourly: readonly HourlyTuple[], profile: unknown): 
 export const typicalDay = (model: TypicalModel, weekday: number): Typical[] =>
   Array.from({ length: 24 }, (_, h) => model.typical(weekday, h));
 
+/** Berlin hours [open, close) of a weekday. */
+export interface OpenHours {
+  open: number;
+  close: number;
+}
+
+// Own data only counts once the weekday was observed nearly all day, else one evening would crop the chart to it.
+const MIN_OBSERVED_HOURS = 20;
+
+export function openHours(model: Pick<TypicalModel, "profile" | "own">, weekday: number): OpenHours | null {
+  const span = (open: boolean[]): OpenHours | null => {
+    const first = open.indexOf(true);
+    return first < 0 ? null : { open: first, close: open.lastIndexOf(true) + 1 };
+  };
+  const profileRow = model.profile?.[weekday];
+  if (profileRow) return span(profileRow.map((v) => v > 0));
+  const own = model.own[weekday];
+  if (!own || own.filter((s) => s.mean !== null).length < MIN_OBSERVED_HOURS) return null;
+  return span(own.map((s) => (s.mean ?? 0) >= 1));
+}
+
 export function describeSource(source: TypicalSource, model: Pick<TypicalModel, "scale" | "fitHours">): string {
   switch (source) {
     case "own":

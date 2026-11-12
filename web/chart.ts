@@ -11,6 +11,9 @@ export interface Theme {
   temperature: string;
   rain: string;
   neutral: string;
+  divLo: string;
+  divMid: string;
+  divHi: string;
   seqLo: string;
   seqHi: string;
 }
@@ -29,6 +32,9 @@ export function theme(): Theme {
     temperature: v("--series-2"),
     rain: v("--series-3"),
     neutral: v("--neutral"),
+    divLo: v("--div-lo"),
+    divMid: v("--div-mid"),
+    divHi: v("--div-hi"),
     seqLo: v("--seq-lo"),
     seqHi: v("--seq-hi"),
   };
@@ -75,7 +81,7 @@ export function fmtAge(seconds: number): string {
   return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
-export type LegendKey = "line" | "wash" | "rule" | "dot" | "triangle";
+export type LegendKey = "line" | "dash" | "wash" | "ribbon" | "bar" | "rule" | "dot" | "triangle";
 
 export function legend(items: { label: string; key: LegendKey; color: string }[]): HTMLElement {
   return el(
@@ -101,6 +107,37 @@ export function dataTable(summary: string, head: string[], rows: (string | numbe
     el("tbody", {}, ...rows.map((r) => el("tr", {}, ...r.map((c) => el("td", { text: String(c) }))))),
   );
   return el("details", { className: "table-view" }, el("summary", { text: summary }), el("div", { className: "table-scroll" }, table));
+}
+
+export function segmented<T extends string | number>(
+  options: readonly { value: T; label: string }[],
+  current: T,
+  onPick: (value: T) => void,
+  label: string,
+): HTMLElement {
+  const group = el(
+    "div",
+    { className: "segmented" },
+    ...options.map(({ value, label }) => {
+      const b = el("button", { text: label });
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(value === current));
+      b.addEventListener("click", () => value !== current && onPick(value));
+      return b;
+    }),
+  );
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", label);
+  return group;
+}
+
+/** Whole-hour ticks across [lo, hi], thinned to fit the width. */
+export function hourTicks(lo: number, hi: number, width: number): number[] {
+  const fit = Math.max(2, Math.floor((width - MARGIN.marginLeft) / 56));
+  const step = [1, 2, 3, 4, 6].find((s) => (hi - lo) / s <= fit) ?? 6;
+  const ticks: number[] = [];
+  for (let h = Math.ceil(lo / step) * step; h <= hi; h += step) ticks.push(h);
+  return ticks;
 }
 
 export const chartWidth = (body: HTMLElement): number => Math.max(280, Math.floor(body.clientWidth));

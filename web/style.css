@@ -15,6 +15,9 @@
   --neutral: #898781;
   --seq-lo: #cde2fb;
   --seq-hi: #0d366b;
+  --div-lo: #2a78d6;
+  --div-mid: #ecebe6;
+  --div-hi: #c8384f;
   --warning: #fab219;
   --critical: #d03b3b;
   --info: #52514e;
@@ -42,6 +45,9 @@
     --neutral: #898781;
     --seq-lo: #0d366b;
     --seq-hi: #b7d3f6;
+    --div-lo: #4f95ea;
+    --div-mid: #333331;
+    --div-hi: #e2607a;
     --info: #c3c2b7;
   }
 }
@@ -80,6 +86,12 @@ h2 {
 
 p {
   margin: 0 0 0.5rem;
+}
+
+.tagline {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
 }
 
 .studio-name,
@@ -150,6 +162,133 @@ button {
 
 .usual {
   margin-top: 0.5rem;
+}
+
+.outlook {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.progress {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.progress-lead {
+  margin: 0 0 0.4rem;
+}
+
+.milestones {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.5rem 1.5rem;
+}
+
+.milestones li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.milestone-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.milestones .done .milestone-label::after {
+  content: " ✓";
+  color: var(--series-3);
+}
+
+.bar {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--grid);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  width: calc(var(--done) * 100%);
+  background: var(--series-1);
+}
+
+.done .bar-fill {
+  background: var(--series-3);
+}
+
+.view-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.6rem 1rem;
+  background: transparent;
+  border-style: dashed;
+}
+
+.view-empty h2 {
+  margin: 0;
+  color: var(--muted);
+}
+
+.view-empty .view-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sticky-now {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 10;
+  width: min(72rem, 100%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.75rem;
+  padding: 0.5rem 1rem;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+  transform: translate(-50%, -100%);
+  transition: transform 0.2s;
+}
+
+.sticky-now.show {
+  transform: translate(-50%, 0);
+}
+
+.sticky-now strong {
+  font-size: 1.15rem;
+}
+
+.sticky-now span {
+  color: var(--muted);
+}
+
+.sticky-outlook {
+  font-weight: 500;
+}
+
+.sticky-studio {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sticky-now {
+    transition: none;
+  }
 }
 
 .now-hero {
@@ -255,6 +394,38 @@ button {
   background: var(--key);
 }
 
+.key-dash::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--key) 0 4px, transparent 4px 7px);
+}
+
+.key-ribbon::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 4px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--key) 60%, transparent);
+}
+
+.key-bar::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 3px);
+  width: 6px;
+  bottom: 0;
+  height: 100%;
+  border-radius: 1px 1px 0 0;
+  background: var(--key);
+}
+
 .key-wash {
   background: color-mix(in srgb, var(--key) 20%, transparent);
   border-radius: 2px;
@@ -281,21 +452,22 @@ button {
   border-top: 8px solid var(--key);
 }
 
-.range {
+.segmented {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 0.25rem;
   margin-bottom: 0.75rem;
 }
 
-.range button {
+.segmented button {
   cursor: pointer;
 }
 
-.range button:hover {
+.segmented button:hover {
   background: color-mix(in srgb, var(--text) 5%, var(--surface));
 }
 
-.range button[aria-pressed="true"] {
+.segmented button[aria-pressed="true"] {
   font-weight: 600;
   border-color: var(--text);
 }
@@ -361,5 +533,9 @@ a {
 
   .hero-value {
     font-size: 3rem;
+  }
+
+  .sticky-studio {
+    display: none;
   }
 }
