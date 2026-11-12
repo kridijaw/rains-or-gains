@@ -95,31 +95,6 @@ h1 {
   margin: 0;
 }
 
-.logo {
-  width: 1.6rem;
-  height: 1.6rem;
-  fill: var(--series-1);
-  filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--series-1) 40%, transparent));
-}
-
-.gains {
-  width: 2.6rem;
-  height: 2.35rem;
-  margin: -0.2rem 0 0 0.1rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.logo-bar {
-  fill: none;
-  stroke: var(--surface);
-  stroke-width: 1.8;
-  stroke-linecap: round;
-}
-
 h2 {
   display: flex;
   flex-wrap: wrap;
