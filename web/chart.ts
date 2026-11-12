@@ -81,7 +81,7 @@ export function fmtAge(seconds: number): string {
   return h < 36 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
 }
 
-export type LegendKey = "line" | "dash" | "wash" | "ribbon" | "bar" | "rule" | "dot" | "triangle" | "triangle-up";
+export type LegendKey = "line" | "dash" | "wash" | "ribbon" | "bar" | "rule" | "dot" | "triangle" | "triangle-up" | "outline";
 
 export function legend(items: { label: string; key: LegendKey; color: string }[]): HTMLElement {
   return el(

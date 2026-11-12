@@ -605,6 +605,11 @@ select:hover {
   border-radius: 2px;
 }
 
+.key-outline {
+  border: 2px solid var(--key);
+  border-radius: 3px;
+}
+
 .key-dot::after {
   content: "";
   position: absolute;

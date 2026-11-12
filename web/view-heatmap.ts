@@ -1,11 +1,12 @@
 import * as Plot from "@observablehq/plot";
-import { chartBlock, dataTable, fmtHour, fmtPct, fmtSigned, message, segmented, theme } from "./chart";
-import { WEEKDAYS } from "./time";
+import { chartBlock, dataTable, fmtHour, fmtPct, fmtSigned, legend, message, segmented, theme } from "./chart";
+import { berlin, WEEKDAYS } from "./time";
 import { MIN_WEEKS, openHours, type TypicalModel } from "./typical";
 
 export type HeatMode = "own" | "fitx" | "diff";
 
 export interface HeatmapInput {
+  now: number;
   model: TypicalModel;
   width: number;
   mode: HeatMode | null;
@@ -29,6 +30,7 @@ function heatmap(
   color: Plot.ScaleOptions,
   title: (d: Cell) => string,
   fade: boolean,
+  now: { weekday: string; hour: number } | null,
 ) {
   const c = theme();
   const cellWidth = (width - MARGIN_LEFT - 8) / hours.length;
@@ -58,6 +60,7 @@ function heatmap(
         tip: true,
         className: "cells",
       }),
+      Plot.cell(now ? [now] : [], { x: "hour", y: "weekday", fill: "none", stroke: c.text, strokeWidth: 2, inset: 0, r: 4, className: "fade" }),
     ],
   });
   // Stagger the entrance as a diagonal wave from the top-left cell.
@@ -79,9 +82,12 @@ function weekHours(model: TypicalModel): number[] {
 const weeksLabel = (d: Cell) => `${d.n} samples, ${d.weeks} week${d.weeks === 1 ? "" : "s"}`;
 
 /** Returns false when there is nothing to show yet. */
-export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }: HeatmapInput): boolean {
+export function renderHeatmap(root: HTMLElement, { now, model, width, mode, onMode }: HeatmapInput): boolean {
   const c = theme();
   const hours = weekHours(model);
+  const t = berlin(now);
+  const nowCell = hours.includes(t.hour) ? { weekday: WEEKDAYS[t.weekday], hour: t.hour } : null;
+  const nowKey = nowCell && legend([{ label: `Now, ${nowCell.weekday} ${fmtHour(nowCell.hour)}`, key: "outline", color: c.text }]);
   const scale = model.scale;
   const own: Cell[] = model.own.flatMap((row, d) =>
     row.map((s, h) => ({ weekday: WEEKDAYS[d], hour: h, value: s.mean, n: s.n, weeks: s.weeks })),
@@ -129,7 +135,9 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
           pctColor("Mean occupancy, %"),
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtPct(d.value)} mean\n${weeksLabel(d)}`,
           true,
+          nowCell,
         ),
+        nowKey,
         faded &&
           message(`Faded cells have fewer than ${MIN_WEEKS} weeks of data; the usual value falls back to the FitX profile there.`, "muted small"),
       ),
@@ -148,7 +156,9 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
             : { ...pctColor("Relative (unknown unit)"), domain: [0, Math.max(1, profileMax)] },
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${shared ? fmtPct(d.value) : Math.round(d.value ?? 0)}`,
           false,
+          nowCell,
         ),
+        nowKey,
       ),
     );
   } else {
@@ -163,7 +173,9 @@ export function renderHeatmap(root: HTMLElement, { model, width, mode, onMode }:
           { type: "linear", domain: [-m, 0, m], range: [c.divLo, c.divMid, c.divHi], interpolate: "lab", label: "Points, own minus FitX" },
           (d) => `${d.weekday} ${fmtHour(d.hour)}\n${fmtSigned(d.value, " points")}\n${weeksLabel(d)}`,
           true,
+          nowCell,
         ),
+        nowKey,
       ),
     );
   }

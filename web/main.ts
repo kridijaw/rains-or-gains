@@ -156,7 +156,7 @@ function draw(which: View[] = ALL, restart = false): void {
           width,
           onRange: setRange,
         });
-      else if (view === "heatmap") empty = !renderHeatmap(root, { model: s.model, width, mode: s.heatMode, onMode: setHeatMode });
+      else if (view === "heatmap") empty = !renderHeatmap(root, { now: s.now, model: s.model, width, mode: s.heatMode, onMode: setHeatMode });
       else empty = !renderEffect(root, { hourly, model: s.model, weather, holidays: s.holidays, width });
     } catch (err) {
       console.error(err);
