@@ -7,6 +7,7 @@ import {
   parseHourlyQuery,
   parseInteger,
   parseNowQuery,
+  restoreCacheControl,
   toHourly,
   toLatest,
   toProfile,
@@ -132,5 +133,22 @@ describe("response shapes", () => {
       [3600, 41.7, 50, 12],
       [7200, null, null, 0],
     ]);
+  });
+});
+
+describe("restoreCacheControl", () => {
+  it("puts back the max-age stored with the cache entry", async () => {
+    const hit = new Response("[]", {
+      headers: { "cache-control": "public, max-age=14400", "x-origin-cache-control": "public, max-age=60" },
+    });
+    const res = restoreCacheControl(hit, "public, max-age=300");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(res.headers.has("x-origin-cache-control")).toBe(false);
+    expect(await res.text()).toBe("[]");
+  });
+
+  it("falls back to the route TTL for entries stored without it", () => {
+    const hit = new Response("[]", { headers: { "cache-control": "public, max-age=14400" } });
+    expect(restoreCacheControl(hit, "public, max-age=60").headers.get("cache-control")).toBe("public, max-age=60");
   });
 });

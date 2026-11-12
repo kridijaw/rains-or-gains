@@ -203,7 +203,7 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   const cache = caches.default;
   const key = new Request(cacheKeyUrl(url.origin, url.pathname, q.value), { method: "GET" });
   const hit = await cache.match(key);
-  if (hit) return hit;
+  if (hit) return restoreCacheControl(hit, `public, max-age=${r.ttl}`);
 
   let res: Response;
   try {
@@ -214,7 +214,19 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   }
   if (res.status === 200) {
     if (!res.headers.has("cache-control")) res.headers.set("cache-control", `public, max-age=${r.ttl}`);
-    ctx.waitUntil(cache.put(key, res.clone()));
+    const stored = res.clone();
+    stored.headers.set(ORIGINAL_CACHE_CONTROL, res.headers.get("cache-control")!);
+    ctx.waitUntil(cache.put(key, stored));
   }
+  return res;
+}
+
+// Cache hits come back with the zone's Browser Cache TTL (4 h by default) in place of our max-age.
+const ORIGINAL_CACHE_CONTROL = "x-origin-cache-control";
+
+export function restoreCacheControl(hit: Response, fallback: string): Response {
+  const res = new Response(hit.body, hit);
+  res.headers.set("cache-control", res.headers.get(ORIGINAL_CACHE_CONTROL) ?? fallback);
+  res.headers.delete(ORIGINAL_CACHE_CONTROL);
   return res;
 }
