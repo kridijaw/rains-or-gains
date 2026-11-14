@@ -41,6 +41,9 @@ export function theme(): Theme {
 }
 
 export const MARGIN = { marginLeft: 40, marginRight: 16 } as const;
+// Plot pins a top-anchored y label to the SVG's top edge; this keeps it clear of the top tick.
+export const LABEL_GAP = 16;
+export const LABELLED = { marginTop: 20 + LABEL_GAP } as const;
 
 type Child = Node | string | null | false | undefined;
 
