@@ -1,6 +1,7 @@
 {
   "name": "rains-or-gains",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build:web": "node scripts/build-web.mjs",
