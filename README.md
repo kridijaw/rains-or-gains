@@ -1,4 +1,4 @@
-# rain-or-gains
+# rains-or-gains
 
 Does the weather (or a holiday) change how full the gym is? A Cloudflare Worker logs the live occupancy of [FitX Berlin-East Side Mall](https://www.fitx.de/fitnessstudios/berlin-east-side-mall) every 5 minutes into D1, for later comparison with weather and holiday data.
 

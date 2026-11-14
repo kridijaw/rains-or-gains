@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "rain-or-gains",
+  "name": "rains-or-gains",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-12",
   "workers_dev": false,

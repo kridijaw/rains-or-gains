@@ -1,5 +1,5 @@
 const BASE = "https://www.fitx.de";
-const USER_AGENT = "rain-or-gains/1.0 (personal occupancy logger, one request per 5 min)";
+const USER_AGENT = "rains-or-gains/1.0 (personal occupancy logger, one request per 5 min)";
 
 export interface Studio {
   branchId: number;

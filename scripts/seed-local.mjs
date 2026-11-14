@@ -143,7 +143,7 @@ statements.push(
    FROM samples WHERE percentage IS NOT NULL AND hidden = 0 GROUP BY 1, 2;`,
 );
 
-const dir = mkdtempSync(join(tmpdir(), "rain-or-gains-seed-"));
+const dir = mkdtempSync(join(tmpdir(), "rains-or-gains-seed-"));
 const file = join(dir, "seed.sql");
 writeFileSync(file, statements.join("\n\n") + "\n");
 try {
