@@ -1,5 +1,5 @@
 import * as Plot from "@observablehq/plot";
-import { chartBlock, dataTable, el, LABELLED, fmtDate, fmtDateTime, legend, message, theme, type LegendKey } from "./chart";
+import { chartBlock, dataTable, el, LABELLED, labelledHeight, fmtDate, fmtDateTime, legend, message, theme, type LegendKey } from "./chart";
 import { dailyPrecipitation } from "./series";
 import { berlin, lastDays, startOfDay } from "./time";
 import { MARGIN_X, xAxis, type RangeDays } from "./view-week";
@@ -12,10 +12,6 @@ export interface WeatherInput {
   width: number;
   picker: HTMLElement;
 }
-
-// The Now card's 20% steps are this tall, so both cards read at the same density.
-const TICK_STEP = 34;
-const X_AXIS = 30;
 
 const NICE = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
 
@@ -63,10 +59,9 @@ export function renderWeather(root: HTMLElement, input: WeatherInput): void {
   };
   const chart = Plot.plot({
     width,
-    height: LABELLED.marginTop + (tempTicks.length - 1) * TICK_STEP + X_AXIS,
+    height: labelledHeight(tempTicks.length - 1),
     ...MARGIN_X,
     ...LABELLED,
-    marginBottom: X_AXIS,
     x: xAxis(from, to, days, width),
     y: { domain },
     marks: [

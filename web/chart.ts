@@ -42,8 +42,12 @@ export function theme(): Theme {
 
 export const MARGIN = { marginLeft: 40, marginRight: 16 } as const;
 // Plot pins a top-anchored y label to the SVG's top edge; this keeps it clear of the top tick.
-export const LABEL_GAP = 16;
-export const LABELLED = { marginTop: 20 + LABEL_GAP } as const;
+const LABEL_GAP = 16;
+export const LABELLED = { marginTop: 20 + LABEL_GAP, marginBottom: 30 } as const;
+// Every labelled chart gives each y tick interval this much height, so the cards read at one density.
+export const TICK_STEP = 34;
+export const percentTicks = (max: number): number[] => Array.from({ length: max / 20 + 1 }, (_, i) => i * 20);
+export const labelledHeight = (intervals: number): number => LABELLED.marginTop + intervals * TICK_STEP + LABELLED.marginBottom;
 
 type Child = Node | string | null | false | undefined;
 

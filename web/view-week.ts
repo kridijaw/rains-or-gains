@@ -11,7 +11,8 @@ import {
   legend,
   MARGIN,
   LABELLED,
-  LABEL_GAP,
+  labelledHeight,
+  percentTicks,
   message,
   el,
   theme,
@@ -94,11 +95,11 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
 
   const occupancy = Plot.plot({
     width,
-    height: 220 + LABEL_GAP,
+    height: labelledHeight(yMax / 20),
     ...MARGIN_X,
     ...LABELLED,
     x,
-    y: { domain: [0, yMax], grid: true, label: "%" },
+    y: { domain: [0, yMax], grid: true, ticks: percentTicks(yMax), label: "%" },
     marks: [
       Plot.rect(closed, { x1: "x1", x2: "x2", fill: c.neutral, fillOpacity: 0.1 }),
       Plot.rect(school, {

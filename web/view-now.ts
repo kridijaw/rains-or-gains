@@ -13,7 +13,8 @@ import {
   legend,
   MARGIN,
   LABELLED,
-  LABEL_GAP,
+  labelledHeight,
+  percentTicks,
   message,
   theme,
   type LegendItem,
@@ -208,7 +209,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const ahead = expected.filter((e) => e.x > nowX);
   const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
   const live = freshness(body.latest, now).state === "ok";
-  const yMax = Math.max(100, ...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
+  const yMax = Math.ceil(Math.max(100, ...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v)) / 20) * 20;
 
   const tips = [
     ...valid.map((d) => {
@@ -224,12 +225,12 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 
   const chart = Plot.plot({
     width,
-    height: 220 + LABEL_GAP,
+    height: labelledHeight(yMax / 20),
     ...MARGIN,
     ...LABELLED,
     style: { overflow: "visible" },
     x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
-    y: { domain: [0, yMax], nice: true, grid: true, label: "%", tickFormat: (v: number) => `${v}` },
+    y: { domain: [0, yMax], grid: true, ticks: percentTicks(yMax), label: "%", tickFormat: (v: number) => `${v}` },
     marks: [
       Plot.ruleX(inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
       Plot.ruleY([0], { stroke: c.baseline }),
