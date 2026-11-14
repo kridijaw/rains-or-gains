@@ -159,7 +159,7 @@ function holidayNote({ now, holidays }: NowInput, t0: Today): HTMLElement | null
     "p",
     { className: "holiday-note small" },
     el("span", { className: "holiday-label", text: label }),
-    t0.usualNow !== null && el("span", { className: "muted", text: `Usual is for a normal ${DAY_NAMES[weekday]}.` }),
+    t0.cur?.value != null && t0.usualNow !== null && el("span", { className: "muted", text: `Usual is for a normal ${DAY_NAMES[weekday]}.` }),
   );
 }
 
