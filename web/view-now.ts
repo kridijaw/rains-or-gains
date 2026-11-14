@@ -12,6 +12,8 @@ import {
   hourTicks,
   legend,
   MARGIN,
+  LABELLED,
+  LABEL_GAP,
   message,
   theme,
   type LegendItem,
@@ -31,6 +33,10 @@ export interface NowInput {
   body: NowBody;
   model: TypicalModel;
   width: number;
+  /** Range picker, placed at the bottom right of the chart. */
+  picker: HTMLElement;
+  /** Shown in place of today's chart when a longer range is picked. */
+  history: HTMLElement[] | null;
 }
 
 export interface NowSummary {
@@ -218,8 +224,9 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 
   const chart = Plot.plot({
     width,
-    height: 220,
+    height: 220 + LABEL_GAP,
     ...MARGIN,
+    ...LABELLED,
     style: { overflow: "visible" },
     x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
     y: { domain: [0, yMax], nice: true, grid: true, label: "%", tickFormat: (v: number) => `${v}` },
@@ -266,7 +273,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   ];
   if (ahead.length) keys.push({ label: "Expected rest of today", key: "dash", color: c.occupancy });
   if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral, info: USUAL_INFO });
-  blocks.push(chartBlock(null, chart, legend(keys)));
+  blocks.push(chartBlock(null, chart, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
   if (valid.length === 0) blocks.unshift(message("No readings since midnight yet."));
 
   if (usualPts.length === 0 && model.profile) {
@@ -312,7 +319,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 
 export function renderNow(root: HTMLElement, input: NowInput): NowSummary | null {
   const t0 = today(input);
-  root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...todayChart(input, t0))));
+  root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...(input.history ?? todayChart(input, t0)))));
   return t0.cur
     ? {
         value: t0.cur.value,

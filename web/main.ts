@@ -1,5 +1,5 @@
 import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
-import { chartWidth, el, infoTip, message, reducedMotion, skeleton } from "./chart";
+import { chartWidth, el, infoTip, message, reducedMotion, segmented, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
 import { berlin, lastDays, startOfDay } from "./time";
@@ -8,7 +8,8 @@ import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
 import { renderNow, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
-import { renderWeek, type RangeDays } from "./view-week";
+import { RANGES, weekBlocks, type RangeDays } from "./view-week";
+import { renderWeather } from "./view-weather";
 import { themeToggle } from "./theme";
 import { getWeather, type WeatherHour } from "./weather";
 
@@ -24,10 +25,14 @@ const nowUpdated = document.querySelector<HTMLElement>("#now-updated")!;
 const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
 const baseTitle = document.title;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
-const views = { now: body("view-now"), week: body("view-week"), heatmap: body("view-heatmap"), effect: body("view-effect") };
+const views = { now: body("view-now"), weather: body("view-weather"), heatmap: body("view-heatmap"), effect: body("view-effect") };
 document.querySelector("#view-effect h2")!.append(infoTip(EFFECT_INFO));
 type View = keyof typeof views;
-const ALL: View[] = ["now", "week", "heatmap", "effect"];
+const ALL: View[] = ["now", "weather", "heatmap", "effect"];
+
+type Range = "now" | RangeDays;
+const RANGE_OPTIONS = [{ value: "now" as Range, label: "Now" }, ...RANGES.map((d) => ({ value: d as Range, label: `${d} days` }))];
+const WEATHER_OPTIONS = RANGES.map((d) => ({ value: d, label: `${d} days` }));
 
 // A string holds an error message, null means still loading.
 type Loadable<T> = T | string | null;
@@ -39,7 +44,8 @@ interface State {
   hourly: Loadable<HourlyTuple[]>;
   hourlyTo: number;
   model: TypicalModel;
-  days: RangeDays;
+  range: Range;
+  weatherRange: RangeDays;
   heatMode: HeatMode | null;
   weather: Loadable<{ days: number; hours: WeatherHour[] }>;
   holidays: Loadable<Holiday[]>;
@@ -128,8 +134,17 @@ function draw(which: View[] = ALL, restart = false): void {
           setStatus(null);
           document.title = baseTitle;
         } else if (s.nowBody) {
-          enter(root, view);
-          const summary = renderNow(root, { now: s.now, body: s.nowBody, model: s.model, width: chartWidth(root) });
+          enter(root, view, restart);
+          const width = chartWidth(root);
+          const picker = segmented(RANGE_OPTIONS, s.range, setRange, "Time range");
+          const summary = renderNow(root, {
+            now: s.now,
+            body: s.nowBody,
+            model: s.model,
+            width,
+            picker,
+            history: historyBlocks(s, hourly, width, picker),
+          });
           const value = summary?.value ?? null;
           const valueNode = root.querySelector<HTMLElement>(".hero-value");
           if (value !== null && value !== shownValue && valueNode && !reducedMotion()) countUp(valueNode, shownValue ?? 0, value);
@@ -144,6 +159,16 @@ function draw(which: View[] = ALL, restart = false): void {
         }
         continue;
       }
+      if (view === "weather") {
+        if (weather === null) root.replaceChildren(skeleton(220));
+        else if (typeof weather === "string") root.replaceChildren(message(`Weather unavailable: ${weather}`, "error"));
+        else {
+          enter(root, view, restart);
+          const picker = segmented(WEATHER_OPTIONS, s.weatherRange, setWeatherRange, "Weather time range");
+          renderWeather(root, { now: s.now, days: s.weatherRange, weather, width: chartWidth(root), picker });
+        }
+        continue;
+      }
       if (typeof s.hourly === "string") {
         root.replaceChildren(message(`Could not load history: ${s.hourly}`, "error"));
         continue;
@@ -151,18 +176,7 @@ function draw(which: View[] = ALL, restart = false): void {
       if (!hourly) continue;
       enter(root, view, restart);
       const width = chartWidth(root);
-      if (view === "week")
-        renderWeek(root, {
-          now: s.now,
-          days: s.days,
-          hourly,
-          model: s.model,
-          weather,
-          holidays: s.holidays,
-          width,
-          onRange: setRange,
-        });
-      else if (view === "heatmap") empty = !renderHeatmap(root, { now: s.now, model: s.model, width, mode: s.heatMode, onMode: setHeatMode });
+      if (view === "heatmap") empty = !renderHeatmap(root, { now: s.now, model: s.model, width, mode: s.heatMode, onMode: setHeatMode });
       else empty = !renderEffect(root, { hourly, model: s.model, weather, holidays: s.holidays, width });
     } catch (err) {
       console.error(err);
@@ -171,6 +185,19 @@ function draw(which: View[] = ALL, restart = false): void {
       root.parentElement!.classList.toggle("view-empty", empty);
     }
   }
+}
+
+function historyBlocks(
+  s: State,
+  hourly: HourlyTuple[] | null,
+  width: number,
+  picker: HTMLElement,
+): HTMLElement[] | null {
+  if (s.range === "now") return null;
+  const foot = el("div", { className: "chart-foot" }, picker);
+  if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
+  if (!hourly) return [skeleton(220), foot];
+  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, width, picker });
 }
 
 function setHeatMode(mode: HeatMode): void {
@@ -190,15 +217,21 @@ async function loadWeather(s: State, days: number): Promise<void> {
   }
 }
 
-async function setRange(days: RangeDays): Promise<void> {
+function setRange(range: Range): void {
+  if (!state) return;
+  state.range = range;
+  draw(["now"], true);
+}
+
+async function setWeatherRange(days: RangeDays): Promise<void> {
   const s = state;
   if (!s) return;
-  s.days = days;
-  if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["week"], true);
-  views.week.classList.add("loading");
+  s.weatherRange = days;
+  if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["weather"], true);
+  views.weather.classList.add("loading");
   await loadWeather(s, days);
   if (state !== s) return;
-  draw(["week"], true);
+  draw(["weather"], true);
   draw(["effect"]);
 }
 
@@ -243,7 +276,8 @@ async function render(studio: Studio): Promise<void> {
     hourly: null,
     hourlyTo: 0,
     model: buildTypical([], null),
-    days: state?.days ?? 7,
+    range: state?.range ?? "now",
+    weatherRange: state?.weatherRange ?? 7,
     heatMode: state?.heatMode ?? null,
     weather: null,
     holidays: null,
@@ -263,12 +297,12 @@ async function render(studio: Studio): Promise<void> {
   draw();
 
   await Promise.all([
-    loadWeather(s, s.days),
+    loadWeather(s, s.weatherRange),
     holidays.then((h) => {
       s.holidays = h;
     }),
   ]);
-  if (state === s) draw(["week", "effect"]);
+  if (state === s) draw(s.range === "now" ? ["weather", "effect"] : ["now", "weather", "effect"]);
 }
 
 function selectedStudio(studios: Studio[]): Studio {
@@ -303,7 +337,7 @@ async function main(): Promise<void> {
   }
   if (studios.length === 0) {
     views.now.replaceChildren(message("No studios logged yet. The first sample arrives within 5 minutes of deploying."));
-    for (const v of [views.week, views.heatmap, views.effect]) v.replaceChildren(message("Waiting for the first sample."));
+    for (const v of [views.weather, views.heatmap, views.effect]) v.replaceChildren(message("Waiting for the first sample."));
     return;
   }
 
