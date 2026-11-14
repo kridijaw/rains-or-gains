@@ -538,6 +538,21 @@ select:hover {
   margin-bottom: 1rem;
 }
 
+.holiday-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.6rem;
+  margin: 0.5rem 0 0;
+}
+
+.holiday-label {
+  padding: 0.1rem 0.6rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--neutral) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--neutral) 35%, transparent);
+}
+
 .status {
   display: flex;
   flex-wrap: wrap;

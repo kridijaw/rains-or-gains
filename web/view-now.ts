@@ -19,6 +19,7 @@ import {
   theme,
   type LegendItem,
 } from "./chart";
+import { holidayLabel, type Holiday } from "./holidays";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
 import { berlin } from "./time";
 import { MIN_FIT_HOURS, MIN_WEEKS, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
@@ -38,6 +39,7 @@ export interface NowInput {
   picker: HTMLElement;
   /** Shown in place of today's chart when a longer range is picked. */
   history: HTMLElement[] | null;
+  holidays: Holiday[] | string | null;
 }
 
 export interface NowSummary {
@@ -148,6 +150,19 @@ function meter(value: number, usual: number | null): HTMLElement {
   return node;
 }
 
+function holidayNote({ now, holidays }: NowInput, t0: Today): HTMLElement | null {
+  if (!Array.isArray(holidays)) return null;
+  const { date, weekday } = berlin(now);
+  const label = holidayLabel(holidays, date);
+  if (!label) return null;
+  return el(
+    "p",
+    { className: "holiday-note small" },
+    el("span", { className: "holiday-label", text: label }),
+    t0.usualNow !== null && el("span", { className: "muted", text: `Usual is for a normal ${DAY_NAMES[weekday]}.` }),
+  );
+}
+
 function hero(input: NowInput, t0: Today): HTMLElement {
   const { now, body } = input;
   const f = freshness(body.latest, now);
@@ -168,6 +183,7 @@ function hero(input: NowInput, t0: Today): HTMLElement {
   );
   if (value !== null) parts.push(meter(value, t0.usualNow));
   if (value !== null && value > 100) parts.push(message("FitX's scale goes past 100%. Shown as reported.", "muted small"));
+  parts.push(holidayNote(input, t0));
 
   return el("div", { className: "now-hero" }, ...parts);
 }

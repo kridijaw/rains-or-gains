@@ -18,7 +18,7 @@ import {
   termLabel,
   usualValue,
 } from "../web/series";
-import { dayKind, holidayCalendar, parseHolidays, yearsBetween } from "../web/holidays";
+import { dayKind, holidayCalendar, holidayLabel, parseHolidays, yearsBetween } from "../web/holidays";
 import { addDays, berlin, daysBetween, hourFloor, lastDays, startOfDay } from "../web/time";
 import { buildTypical, cellStats, fitScale, MIN_FIT_HOURS, openHours, typicalDay } from "../web/typical";
 import { mergeWeather, parseOpenMeteo, weatherRequests } from "../web/weather";
@@ -195,6 +195,14 @@ describe("holidays", () => {
     expect(dayKind(cal, "2026-12-25")).toBe("public");
     expect(dayKind(cal, "2027-01-02")).toBe("school");
     expect(dayKind(cal, "2027-01-03")).toBeNull();
+  });
+
+  it("labels a day by its holidays, public first", () => {
+    const all = [...parseHolidays(body.slice(0, 1), "school"), ...parseHolidays(body.slice(1, 2), "public")];
+    expect(holidayLabel(all, "2026-12-25")).toBe("Public holiday: 1. Weihnachtstag, school holidays");
+    expect(holidayLabel(all, "2026-12-23")).toBe("School holidays: Christmas holidays");
+    expect(holidayLabel(all.slice(1), "2026-12-25")).toBe("Public holiday: 1. Weihnachtstag");
+    expect(holidayLabel(all, "2026-12-22")).toBeNull();
   });
 
   it("lists the Berlin years a range touches", () => {

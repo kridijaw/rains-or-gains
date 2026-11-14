@@ -49,6 +49,14 @@ export function dayKind(calendar: Map<string, Holiday[]>, date: string): Holiday
   return list.some((h) => h.kind === "public") ? "public" : "school";
 }
 
+export function holidayLabel(holidays: readonly Holiday[], date: string): string | null {
+  const on = holidays.filter((h) => h.start <= date && date <= h.end);
+  const pub = on.find((h) => h.kind === "public");
+  const school = on.find((h) => h.kind === "school");
+  if (pub) return school ? `Public holiday: ${pub.name}, school holidays` : `Public holiday: ${pub.name}`;
+  return school ? `School holidays: ${school.name}` : null;
+}
+
 async function fetchKind(kind: HolidayKind, year: number): Promise<Holiday[]> {
   const path = kind === "public" ? "PublicHolidays" : "SchoolHolidays";
   const res = await fetch(`${BASE}/${path}?${REGION}&validFrom=${year}-01-01&validTo=${year}-12-31`, {

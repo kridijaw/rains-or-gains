@@ -144,6 +144,7 @@ function draw(which: View[] = ALL, restart = false): void {
             width,
             picker,
             history: historyBlocks(s, hourly, width, picker),
+            holidays: s.holidays,
           });
           const value = summary?.value ?? null;
           const valueNode = root.querySelector<HTMLElement>(".hero-value");
@@ -302,7 +303,7 @@ async function render(studio: Studio): Promise<void> {
       s.holidays = h;
     }),
   ]);
-  if (state === s) draw(s.range === "now" ? ["weather", "effect"] : ["now", "weather", "effect"]);
+  if (state === s) draw(["now", "weather", "effect"]);
 }
 
 function selectedStudio(studios: Studio[]): Studio {
