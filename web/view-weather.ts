@@ -1,7 +1,22 @@
 import * as Plot from "@observablehq/plot";
-import { chartBlock, dataTable, el, LABELLED, labelledHeight, fmtDate, fmtDateTime, legend, message, theme, type LegendKey } from "./chart";
+import {
+  chartBlock,
+  dataTable,
+  el,
+  LABELLED,
+  labelledHeight,
+  fmtDate,
+  fmtDateTime,
+  fmtHour,
+  fmtTime,
+  hourTicks,
+  legend,
+  message,
+  theme,
+  type LegendKey,
+} from "./chart";
 import { dailyPrecipitation } from "./series";
-import { berlin, lastDays, startOfDay } from "./time";
+import { addDays, berlin, lastDays, startOfDay } from "./time";
 import { MARGIN_X, xAxis, type RangeDays } from "./view-week";
 import type { WeatherHour } from "./weather";
 
@@ -119,4 +134,92 @@ function dayTable(weather: WeatherHour[], from: number, to: number): HTMLElement
       d.mm === null ? "n/a" : `${d.mm.toFixed(1)} mm`,
     ]);
   return dataTable("Days as a table", ["Day", "Mean temp.", "Range", "Precip."], rows);
+}
+
+export interface WeatherTodayInput {
+  now: number;
+  /** Midnight to midnight in Berlin, forecast included. */
+  weather: WeatherHour[];
+  width: number;
+  picker: HTMLElement;
+}
+
+const DOTTED = { strokeDasharray: "0.5,4", strokeLinecap: "round" } as const;
+
+export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput): void {
+  const { now, weather, width } = input;
+  const c = theme();
+  const date = berlin(now).date;
+  const from = startOfDay(date);
+  const to = startOfDay(addDays(date, 1));
+  const bars = weather
+    .filter((w) => w.ts > from && w.precipitation !== null)
+    .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number, forecast: w.ts > now }));
+  const dry = bars.every((b) => b.mm === 0);
+  const temps = weather.filter((w): w is WeatherHour & { temperature: number } => w.temperature !== null);
+  const past = temps.filter((w) => w.ts <= now);
+  const ahead = temps.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
+  const { domain, tempTicks, mmTicks, toY } = weatherScales(
+    temps.map((w) => w.temperature),
+    Math.max(0.5, ...bars.map((b) => b.mm)),
+  );
+  const tickHours = hourTicks(0, 24, width);
+  const ticks = [];
+  for (let ts = from; ts <= to; ts += 3600) if (tickHours.includes(berlin(ts).hour)) ticks.push(ts);
+  const mmAt = (ts: number) => bars.find((b) => b.x2 === ts)?.mm ?? 0;
+  const tipText = (w: (typeof temps)[number]) => {
+    const mm = mmAt(w.ts);
+    return `${fmtTime(w.ts)}${w.ts > now ? ", forecast" : ""}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in the hour before` : "");
+  };
+  const barMarks = (forecast: boolean) =>
+    Plot.rectY(dry ? [] : bars.filter((b) => b.forecast === forecast), {
+      x1: "x1",
+      x2: "x2",
+      y1: domain[0],
+      y2: (b) => toY(b.mm),
+      fill: c.rain,
+      fillOpacity: forecast ? 0.25 : 1,
+      ...(forecast ? { stroke: c.rain, strokeWidth: 1.5, ...DOTTED } : {}),
+      inset: 1,
+      className: "grow",
+    });
+
+  const chart = Plot.plot({
+    width,
+    height: labelledHeight(tempTicks.length - 1),
+    ...MARGIN_X,
+    ...LABELLED,
+    x: { domain: [from, to], ticks, tickFormat: (ts: number) => fmtHour(berlin(ts).hour), label: null },
+    y: { domain },
+    marks: [
+      Plot.gridY(tempTicks),
+      Plot.axisY(tempTicks, { label: "°C" }),
+      dry ? null : Plot.axisY(mmTicks.map(toY), { anchor: "right", label: "mm/h", tickFormat: (_, i) => String(mmTicks[i]) }),
+      Plot.ruleX([now], { stroke: c.grid, strokeWidth: 1 }),
+      barMarks(false),
+      barMarks(true),
+      Plot.line(past, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2, className: "reveal" }),
+      Plot.line(ahead, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2, ...DOTTED, className: "reveal reveal-late" }),
+      Plot.ruleX(temps, Plot.pointerX({ x: "ts", stroke: c.faint })),
+      Plot.tip(temps, Plot.pointerX({ x: "ts", y: "temperature", title: tipText })),
+    ],
+  });
+
+  const keys: { label: string; key: LegendKey; color: string }[] = [{ label: "Temperature, °C", key: "line", color: c.temperature }];
+  if (!dry) keys.push({ label: "Precipitation, mm per hour", key: "bar", color: c.rain });
+  if (ahead.length > 1 || bars.some((b) => b.forecast && b.mm > 0)) keys.push({ label: "Forecast", key: "dotted", color: c.muted });
+  const rows = temps
+    .filter((w) => w.ts > from)
+    .map((w) => [fmtTime(w.ts), `${w.temperature} °C`, `${mmAt(w.ts).toFixed(1)} mm`, w.ts > now ? "yes" : ""]);
+  root.replaceChildren(
+    ...[
+      chartBlock(
+        null,
+        chart,
+        el("div", { className: "chart-foot" }, legend(keys), input.picker),
+        dry && message("No precipitation in this period.", "muted small"),
+      ),
+      dataTable("Today by hour as a table", ["Time", "Temp.", "Precip. in the hour before", "Forecast"], rows),
+    ],
+  );
 }

@@ -9,9 +9,9 @@ import { renderHeatmap, type HeatMode } from "./view-heatmap";
 import { renderNow, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
 import { RANGES, weekBlocks, type RangeDays } from "./view-week";
-import { renderWeather } from "./view-weather";
+import { renderWeather, renderWeatherToday } from "./view-weather";
 import { themeToggle } from "./theme";
-import { getWeather, type WeatherHour } from "./weather";
+import { getWeather, getWeatherToday, type WeatherHour } from "./weather";
 
 const HISTORY_DAYS = 90;
 const REFRESH_MS = 5 * 60_000;
@@ -32,7 +32,6 @@ const ALL: View[] = ["now", "weather", "heatmap", "effect"];
 
 type Range = "now" | RangeDays;
 const RANGE_OPTIONS = [{ value: "now" as Range, label: "Now" }, ...RANGES.map((d) => ({ value: d as Range, label: `${d} days` }))];
-const WEATHER_OPTIONS = RANGES.map((d) => ({ value: d, label: `${d} days` }));
 
 // A string holds an error message, null means still loading.
 type Loadable<T> = T | string | null;
@@ -45,9 +44,10 @@ interface State {
   hourlyTo: number;
   model: TypicalModel;
   range: Range;
-  weatherRange: RangeDays;
+  weatherRange: Range;
   heatMode: HeatMode | null;
   weather: Loadable<{ days: number; hours: WeatherHour[] }>;
+  weatherToday: Loadable<WeatherHour[]>;
   holidays: Loadable<Holiday[]>;
   refreshedAt: number;
 }
@@ -161,12 +161,15 @@ function draw(which: View[] = ALL, restart = false): void {
         continue;
       }
       if (view === "weather") {
-        if (weather === null) root.replaceChildren(skeleton(220));
-        else if (typeof weather === "string") root.replaceChildren(message(`Weather unavailable: ${weather}`, "error"));
+        const days = s.weatherRange;
+        const shown = days === "now" ? s.weatherToday : weather;
+        if (shown === null) root.replaceChildren(skeleton(220));
+        else if (typeof shown === "string") root.replaceChildren(message(`Weather unavailable: ${shown}`, "error"));
         else {
           enter(root, view, restart);
-          const picker = segmented(WEATHER_OPTIONS, s.weatherRange, setWeatherRange, "Weather time range");
-          renderWeather(root, { now: s.now, days: s.weatherRange, weather, width: chartWidth(root), picker });
+          const input = { now: s.now, weather: shown, width: chartWidth(root), picker: segmented(RANGE_OPTIONS, days, setWeatherRange, "Weather time range") };
+          if (days === "now") renderWeatherToday(root, input);
+          else renderWeather(root, { ...input, days });
         }
         continue;
       }
@@ -218,16 +221,26 @@ async function loadWeather(s: State, days: number): Promise<void> {
   }
 }
 
+async function loadWeatherToday(s: State): Promise<void> {
+  try {
+    const hours = await getWeatherToday(s.studio, s.now);
+    if (state === s) s.weatherToday = hours;
+  } catch (err) {
+    if (state === s) s.weatherToday = errorText(err);
+  }
+}
+
 function setRange(range: Range): void {
   if (!state) return;
   state.range = range;
   draw(["now"], true);
 }
 
-async function setWeatherRange(days: RangeDays): Promise<void> {
+async function setWeatherRange(days: Range): Promise<void> {
   const s = state;
   if (!s) return;
   s.weatherRange = days;
+  if (days === "now") return draw(["weather"], true);
   if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["weather"], true);
   views.weather.classList.add("loading");
   await loadWeather(s, days);
@@ -261,7 +274,9 @@ async function refreshNow(): Promise<void> {
     if (state !== s) return;
     s.nowBody = errorText(err);
   }
-  if (!newHour) return draw(["now"]);
+  await loadWeatherToday(s);
+  if (state !== s) return;
+  if (!newHour) return draw(["now", "weather"]);
   await loadHourly(s);
   if (state === s) draw();
 }
@@ -278,9 +293,10 @@ async function render(studio: Studio): Promise<void> {
     hourlyTo: 0,
     model: buildTypical([], null),
     range: state?.range ?? "now",
-    weatherRange: state?.weatherRange ?? 7,
+    weatherRange: state?.weatherRange ?? "now",
     heatMode: state?.heatMode ?? null,
     weather: null,
+    weatherToday: null,
     holidays: null,
     refreshedAt: Date.now(),
   };
@@ -298,7 +314,8 @@ async function render(studio: Studio): Promise<void> {
   draw();
 
   await Promise.all([
-    loadWeather(s, s.weatherRange),
+    loadWeather(s, s.weatherRange === "now" ? 7 : s.weatherRange),
+    loadWeatherToday(s),
     holidays.then((h) => {
       s.holidays = h;
     }),

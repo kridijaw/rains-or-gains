@@ -1,5 +1,5 @@
 import { cached, webStorage } from "./cache";
-import { addDays, daysBetween, startOfUtcDay, utcDate } from "./time";
+import { addDays, berlin, daysBetween, startOfDay, startOfUtcDay, utcDate } from "./time";
 
 // The archive API lags about 5 days and returns nulls for that tail; one spare day avoids gaps.
 export const ARCHIVE_LAG_DAYS = 6;
@@ -96,4 +96,26 @@ export async function getWeather(
     return mergeWeather(bodies.map(parseOpenMeteo), startOfUtcDay(start), startOfUtcDay(end) + 86400);
   });
   return hours.filter((h) => h.ts >= from && h.ts < to);
+}
+
+// A Berlin day starts on the previous UTC day and can end on the next one, so the request spans three UTC days.
+export function todayRequest(lat: number, lon: number): string {
+  return `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=${HOURLY}&timezone=UTC&timeformat=unixtime&past_days=1&forecast_days=2`;
+}
+
+/** Today's hours in Berlin, from midnight to midnight inclusive, with the forecast for the hours still ahead. */
+export async function getWeatherToday(
+  coords: { lat: number | null; lon: number | null },
+  now = Date.now() / 1000,
+): Promise<WeatherHour[]> {
+  const { lat, lon } = coords;
+  if (lat === null || lon === null) throw new Error("studio has no coordinates");
+  const date = berlin(now).date;
+  const from = startOfDay(date);
+  const to = startOfDay(addDays(date, 1));
+  const key = `weather:today:v1:${lat.toFixed(3)},${lon.toFixed(3)}:${date}`;
+  const hours = await cached(webStorage("sessionStorage"), key, RECENT_MAX_AGE_MS, async () =>
+    parseOpenMeteo(await fetchJson(todayRequest(lat, lon))),
+  );
+  return hours.filter((h) => h.ts >= from && h.ts <= to);
 }

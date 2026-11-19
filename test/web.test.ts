@@ -21,7 +21,7 @@ import {
 import { dayKind, holidayCalendar, holidayLabel, parseHolidays, yearsBetween } from "../web/holidays";
 import { addDays, berlin, daysBetween, hourFloor, lastDays, startOfDay } from "../web/time";
 import { buildTypical, cellStats, fitScale, MIN_FIT_HOURS, openHours, typicalDay } from "../web/typical";
-import { mergeWeather, parseOpenMeteo, weatherRequests } from "../web/weather";
+import { mergeWeather, parseOpenMeteo, todayRequest, weatherRequests } from "../web/weather";
 
 const utc = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) / 1000;
 const at = (date: string, hour: number) => startOfDay(date) + hour * 3600;
@@ -140,6 +140,10 @@ describe("weather", () => {
     const [archive, forecast] = urls("2026-11-01", "2026-11-12");
     expect(archive.url).toContain("start_date=2026-11-01&end_date=2026-11-06");
     expect(forecast.url).toContain("past_days=5");
+  });
+
+  it("covers the whole Berlin day with one forecast request", () => {
+    expect(todayRequest(52.5, 13.45)).toContain("past_days=1&forecast_days=2");
   });
 
   it("parses and merges hourly responses", () => {

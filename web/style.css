@@ -684,6 +684,16 @@ select:hover {
   background: repeating-linear-gradient(90deg, var(--key) 0 4px, transparent 4px 7px);
 }
 
+.key-dotted::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: radial-gradient(circle, var(--key) 1px, transparent 1.2px) 0 0 / 4.5px 2px repeat-x;
+}
+
 .key-ribbon::after {
   content: "";
   position: absolute;
