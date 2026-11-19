@@ -41,6 +41,8 @@ export function theme(): Theme {
 }
 
 export const MARGIN = { marginLeft: 40, marginRight: 16 } as const;
+// Wide enough for the weather card's precipitation axis, so time series in different cards line up.
+export const MARGIN_X = { ...MARGIN, marginRight: 40 };
 // Plot pins a top-anchored y label to the SVG's top edge; this keeps it clear of the top tick.
 const LABEL_GAP = 16;
 export const LABELLED = { marginTop: 20 + LABEL_GAP, marginBottom: 30 } as const;

@@ -6,7 +6,7 @@ import { berlin, lastDays, startOfDay } from "./time";
 import { buildTypical, type TypicalModel } from "./typical";
 import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
-import { renderNow, todayPeak, type NowSummary } from "./view-now";
+import { renderNow, todayHours, todayPeak, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
 import { RANGES, weekBlocks, weekPeak, type RangeDays } from "./view-week";
 import { renderWeather, renderWeatherToday, weatherScale } from "./view-weather";
@@ -172,8 +172,11 @@ function draw(which: View[] = ALL, restart = false): void {
           const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null);
           const picker = segmented(RANGE_OPTIONS, days, setWeatherRange, "Weather time range");
           const input = { now: s.now, weather: shown, width: chartWidth(root), picker, scale };
-          if (days === "now") renderWeatherToday(root, input);
-          else renderWeather(root, { ...input, days });
+          if (days === "now") {
+            const hours =
+              s.nowBody && typeof s.nowBody === "object" ? todayHours({ now: s.now, body: s.nowBody, model: s.model }) : { lo: 0, hi: 24 };
+            renderWeatherToday(root, { ...input, hours });
+          } else renderWeather(root, { ...input, days });
         }
         continue;
       }

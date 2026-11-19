@@ -11,7 +11,7 @@ import {
   fmtTime,
   hourTicks,
   legend,
-  MARGIN,
+  MARGIN_X,
   LABELLED,
   labelledHeight,
   percentTicks,
@@ -230,6 +230,12 @@ export function todayPeak(input: NowData): number {
   return Math.max(...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
 }
 
+/** Hours today's chart spans, so the weather card's Now chart can match it. */
+export function todayHours(input: NowData): { lo: number; hi: number } {
+  const { lo, hi } = todaySeries(input, today(input));
+  return { lo, hi };
+}
+
 function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const { now, body, model, width, yMax } = input;
   const c = theme();
@@ -257,7 +263,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const chart = Plot.plot({
     width,
     height: labelledHeight(yMax / 20),
-    ...MARGIN,
+    ...MARGIN_X,
     ...LABELLED,
     style: { overflow: "visible" },
     x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
@@ -313,7 +319,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     const shape = Plot.plot({
       width,
       height: 90,
-      ...MARGIN,
+      ...MARGIN_X,
       x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
       y: { axis: null },
       marks: [

@@ -10,6 +10,7 @@ import {
   fmtWeekdayDay,
   legend,
   MARGIN,
+  MARGIN_X,
   LABELLED,
   labelledHeight,
   percentTicks,
@@ -70,9 +71,6 @@ function closedSpans(model: TypicalModel, from: number, to: number): { x1: numbe
   }
   return spans.map((s) => ({ x1: Math.max(from, s.x1), x2: Math.min(to, s.x2) })).filter((s) => s.x2 > s.x1);
 }
-
-// Wide enough for the weather card's precipitation axis, so its chart and this one line up in time.
-export const MARGIN_X = { ...MARGIN, marginRight: 40 };
 
 export function xAxis(from: number, to: number, days: RangeDays, width: number) {
   return {

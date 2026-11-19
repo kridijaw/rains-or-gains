@@ -11,13 +11,14 @@ import {
   fmtTime,
   hourTicks,
   legend,
+  MARGIN_X,
   message,
   theme,
   type LegendKey,
 } from "./chart";
-import { dailyPrecipitation } from "./series";
+import { dailyPrecipitation, hourOfDay } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
-import { MARGIN_X, RANGES, xAxis, type RangeDays } from "./view-week";
+import { RANGES, xAxis, type RangeDays } from "./view-week";
 import type { WeatherHour } from "./weather";
 
 export interface WeatherInput {
@@ -186,31 +187,39 @@ export interface WeatherTodayInput {
   width: number;
   picker: HTMLElement;
   scale: WeatherScale;
+  /** Hours of the day shown, matching the Now card's chart. */
+  hours: { lo: number; hi: number };
 }
 
 const DOTTED = { strokeDasharray: "0.5,4", strokeLinecap: "round" } as const;
 
 export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput): void {
   const { now, weather, width, scale } = input;
+  const { lo, hi } = input.hours;
   const c = theme();
-  const { from, to, bars } = todayData(weather, now);
-  const dry = bars.every((b) => b.mm === 0);
+  const { from, to, bars: dayBars } = todayData(weather, now);
+  // Wall-clock hours like the Now card's chart, so a time sits at the same x in both.
+  const hourX = (ts: number) => (ts >= to ? 24 : hourOfDay(ts));
+  const inDay = (x: number) => x >= lo && x <= hi;
   const temps = withTemp(weather);
-  const past = temps.filter((w) => w.ts <= now);
-  const ahead = temps.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
+  // The DST fall-back day repeats an hour; keep its first pass so the line never runs backwards.
+  const pts = temps.map((w) => ({ ...w, x: hourX(w.ts) })).filter((w, i, all) => i === 0 || w.x > all[i - 1].x);
+  const shown = pts.filter((w) => inDay(w.x));
+  const bars = dayBars.map((b) => ({ ...b, h2: hourX(b.x2) })).filter((b) => inDay(b.h2 - 1) && inDay(b.h2));
+  const dry = bars.every((b) => b.mm === 0);
+  const past = shown.filter((w) => w.ts <= now);
+  const ahead = shown.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
   const { domain, tempTicks, mmTicks, toY } = weatherScales(scale, scale.mmPerHour);
-  const tickHours = hourTicks(0, 24, width);
-  const ticks = [];
-  for (let ts = from; ts <= to; ts += 3600) if (tickHours.includes(berlin(ts).hour)) ticks.push(ts);
-  const mmAt = (ts: number) => bars.find((b) => b.x2 === ts)?.mm ?? 0;
+  const nowX = hourX(now);
+  const mmAt = (ts: number) => dayBars.find((b) => b.x2 === ts)?.mm ?? 0;
   const tipText = (w: (typeof temps)[number]) => {
     const mm = mmAt(w.ts);
     return `${fmtTime(w.ts)}${w.ts > now ? ", forecast" : ""}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in the hour before` : "");
   };
   const barMarks = (forecast: boolean) =>
     Plot.rectY(dry ? [] : bars.filter((b) => b.forecast === forecast), {
-      x1: "x1",
-      x2: "x2",
+      x1: (b) => b.h2 - 1,
+      x2: "h2",
       y1: domain[0],
       y2: (b) => toY(b.mm),
       fill: c.rain,
@@ -225,19 +234,19 @@ export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput):
     height: labelledHeight(tempTicks.length - 1),
     ...MARGIN_X,
     ...LABELLED,
-    x: { domain: [from, to], ticks, tickFormat: (ts: number) => fmtHour(berlin(ts).hour), label: null },
+    x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
     y: { domain },
     marks: [
       Plot.gridY(tempTicks),
       Plot.axisY(tempTicks, { label: "°C" }),
       dry ? null : Plot.axisY(mmTicks.map(toY), { anchor: "right", label: "mm/h", tickFormat: (_, i) => String(mmTicks[i]) }),
-      Plot.ruleX([now], { stroke: c.grid, strokeWidth: 1 }),
+      Plot.ruleX(inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
       barMarks(false),
       barMarks(true),
-      Plot.line(past, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2, className: "reveal" }),
-      Plot.line(ahead, { x: "ts", y: "temperature", stroke: c.temperature, strokeWidth: 2, ...DOTTED, className: "reveal reveal-late" }),
-      Plot.ruleX(temps, Plot.pointerX({ x: "ts", stroke: c.faint })),
-      Plot.tip(temps, Plot.pointerX({ x: "ts", y: "temperature", title: tipText })),
+      Plot.line(past, { x: "x", y: "temperature", stroke: c.temperature, strokeWidth: 2, className: "reveal" }),
+      Plot.line(ahead, { x: "x", y: "temperature", stroke: c.temperature, strokeWidth: 2, ...DOTTED, className: "reveal reveal-late" }),
+      Plot.ruleX(shown, Plot.pointerX({ x: "x", stroke: c.faint })),
+      Plot.tip(shown, Plot.pointerX({ x: "x", y: "temperature", title: tipText })),
     ],
   });
 
