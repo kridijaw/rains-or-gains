@@ -8,8 +8,11 @@ import {
   fmtAge,
   fmtHour,
   fmtPct,
+  fmtSigned,
   fmtTime,
   hourTicks,
+  tipColumns,
+  weatherTipLine,
   legend,
   MARGIN_X,
   LABELLED,
@@ -23,6 +26,7 @@ import { holidayLabel, type Holiday } from "./holidays";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
 import { berlin } from "./time";
 import { MIN_FIT_HOURS, MIN_WEEKS, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
+import type { WeatherHour } from "./weather";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -40,6 +44,8 @@ export interface NowInput {
   /** Shown in place of today's chart when a longer range is picked. */
   history: HTMLElement[] | null;
   holidays: Holiday[] | string | null;
+  /** Today's hourly weather, for the tooltips of past readings. */
+  weather: WeatherHour[] | null;
   /** Top of the % axis, shared with the longer ranges. */
   yMax: number;
 }
@@ -74,8 +80,6 @@ function current({ now, body }: NowData): Current | null {
   }
   return { value: latest.percentage, ts: latest.ts, term: termLabel(latest.term) };
 }
-
-const about = (v: number) => `about ${fmtPct(v)}`;
 
 /** Short outlook for the sticky bar, e.g. "Quieter from 22:00". */
 function outlookText(o: Outlook, value: number | null): string {
@@ -248,15 +252,32 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
   const live = freshness(body.latest, now).state === "ok";
 
+  const weatherAt = (ts: number) => weatherTipLine(input.weather?.find((w) => w.ts === Math.floor(ts / 3600) * 3600 + 3600));
+  // Every 5 minutes along the drawn expected line, so the tooltip follows the pointer instead of jumping by the hour.
+  const expectedAt = (x: number): number | null => {
+    const i = expected.findIndex((e) => e.x >= x);
+    if (i < 0) return null;
+    if (i === 0) return expected[0].v;
+    const a = expected[i - 1];
+    const b = expected[i];
+    return a.v + ((b.v - a.v) * (x - a.x)) / (b.x - a.x);
+  };
+  const aheadTips: { ts: number; x: number; v: number }[] = [];
+  const lastX = expected.at(-1)?.x ?? -Infinity;
+  for (let ts = Math.floor(now / 300) * 300 + 300; hourOfDay(ts) <= lastX && hourOfDay(ts) > nowX; ts += 300) {
+    const v = expectedAt(hourOfDay(ts));
+    if (v !== null) aheadTips.push({ ts, x: hourOfDay(ts), v });
+  }
+
   const tips = [
     ...valid.map((d) => {
       const u = usualAt(d.x);
-      return { x: d.x, y: d.p, title: `${fmtTime(d.ts)}  ${d.p}%${u === null ? "" : `\nUsual ${fmtPct(u)}`}` };
+      const usual = u === null ? "" : `\nUsual\t${fmtPct(u)} (${fmtSigned(d.p - Math.round(u), "", 0)})`;
+      return { x: d.x, y: d.p, title: `${fmtTime(d.ts)}\t${d.p}%${usual}${weatherAt(d.ts)}` };
     }),
-    ...ahead.map((e) => {
-      const h = Math.floor(e.x);
+    ...aheadTips.map((e) => {
       const u = usualAt(e.x);
-      return { x: e.x, y: e.v, title: `${fmtHour(h)} to ${fmtHour(h + 1)}\nExpected ${about(e.v)}${u === null ? "" : `\nUsual ${fmtPct(u)}`}` };
+      return { x: e.x, y: e.v, title: `${fmtTime(e.ts)}\nExpected\t${fmtPct(e.v)}${u === null ? "" : `\nUsual\t${fmtPct(u)}`}` };
     }),
   ];
 
@@ -301,7 +322,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
           className: "pop",
         }),
       Plot.ruleX(tips, Plot.pointerX({ x: "x", stroke: c.faint })),
-      Plot.tip(tips, Plot.pointerX({ x: "x", y: "y", title: "title" })),
+      Plot.tip(tips, Plot.pointerX({ x: "x", y: "y", title: "title", render: tipColumns })),
     ],
   });
 

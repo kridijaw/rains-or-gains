@@ -7,6 +7,7 @@ import {
   fmtDateTime,
   fmtDayMonth,
   fmtPct,
+  fmtSigned,
   fmtWeekdayDay,
   legend,
   MARGIN,
@@ -17,12 +18,15 @@ import {
   message,
   el,
   theme,
+  tipColumns,
+  weatherTipLine,
   type LegendKey,
 } from "./chart";
 import { dayKind, holidayCalendar, type Holiday } from "./holidays";
 import { dayTicks, hourSeries, usualValue } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
 import { openHours, type TypicalModel } from "./typical";
+import type { WeatherHour } from "./weather";
 
 export const RANGES = [7, 30] as const;
 export type RangeDays = (typeof RANGES)[number];
@@ -33,6 +37,8 @@ export interface WeekInput {
   hourly: HourlyTuple[];
   model: TypicalModel;
   holidays: Holiday[] | string | null;
+  /** Hourly weather, for the tooltip. */
+  weather: WeatherHour[] | null;
   width: number;
   picker: HTMLElement;
   /** Top of the % axis, shared with the other ranges. */
@@ -100,6 +106,7 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
     .map((h) => ({ ...h, x: startOfDay(h.start) + 12 * 3600 }))
     .filter((h) => h.x >= from && h.x <= to);
   const closed = days === 7 ? closedSpans(model, from, to) : [];
+  const weatherByTs = new Map((input.weather ?? []).map((w) => [w.ts, w]));
 
   if (withData.length === 0) {
     blocks.push(message(`No occupancy data in the last ${days} days yet.`));
@@ -143,9 +150,11 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
           x: "mid",
           y: "avg",
           title: (p) =>
-            `${fmtDateTime(p.ts)}\n${fmtPct(p.avg)} mean, ${p.max}% max` +
-            (p.typical === null ? "" : `\nUsual ${fmtPct(p.typical)}`) +
+            `${fmtDateTime(p.ts)}\nMean\t${fmtPct(p.avg)}\nMax\t${p.max}%` +
+            (p.typical === null ? "" : `\nUsual\t${fmtPct(p.typical)} (${fmtSigned(Math.round(p.avg) - Math.round(p.typical), "", 0)})`) +
+            weatherTipLine(weatherByTs.get(p.ts + 3600)) +
             (p.n < 12 ? `\n${p.n} of 12 samples` : ""),
+          render: tipColumns,
         }),
       ),
     ],

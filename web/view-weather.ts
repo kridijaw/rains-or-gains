@@ -212,9 +212,24 @@ export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput):
   const { domain, tempTicks, mmTicks, toY } = weatherScales(scale, scale.mmPerHour);
   const nowX = hourX(now);
   const mmAt = (ts: number) => dayBars.find((b) => b.x2 === ts)?.mm ?? 0;
-  const tipText = (w: (typeof temps)[number]) => {
-    const mm = mmAt(w.ts);
-    return `${fmtTime(w.ts)}${w.ts > now ? ", forecast" : ""}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in the hour before` : "");
+  // Every 5 minutes along the drawn line, so the tooltip follows the pointer instead of jumping by the hour.
+  const tempAt = (ts: number): number | null => {
+    const i = pts.findIndex((w) => w.ts >= ts);
+    if (i < 0 || (i === 0 && pts[0].ts > ts)) return null;
+    if (pts[i].ts === ts) return pts[i].temperature;
+    const a = pts[i - 1];
+    const b = pts[i];
+    return a.temperature + ((b.temperature - a.temperature) * (ts - a.ts)) / (b.ts - a.ts);
+  };
+  const tips: { ts: number; x: number; temperature: number }[] = [];
+  for (let ts = from; ts <= to; ts += 300) {
+    const x = hourX(ts);
+    const t = tempAt(ts);
+    if (t !== null && inDay(x) && !(tips.length && x <= tips[tips.length - 1].x)) tips.push({ ts, x, temperature: t });
+  }
+  const tipText = (d: (typeof tips)[number]) => {
+    const mm = mmAt(Math.floor(d.ts / 3600) * 3600 + 3600);
+    return `${fmtTime(d.ts)}${d.ts > now ? ", forecast" : ""}\n${d.temperature.toFixed(1)} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in this hour` : "");
   };
   const barMarks = (forecast: boolean) =>
     Plot.rectY(dry ? [] : bars.filter((b) => b.forecast === forecast), {
@@ -245,8 +260,8 @@ export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput):
       barMarks(true),
       Plot.line(past, { x: "x", y: "temperature", stroke: c.temperature, strokeWidth: 2, className: "reveal" }),
       Plot.line(ahead, { x: "x", y: "temperature", stroke: c.temperature, strokeWidth: 2, ...DOTTED, className: "reveal reveal-late" }),
-      Plot.ruleX(shown, Plot.pointerX({ x: "x", stroke: c.faint })),
-      Plot.tip(shown, Plot.pointerX({ x: "x", y: "temperature", title: tipText })),
+      Plot.ruleX(tips, Plot.pointerX({ x: "x", stroke: c.faint })),
+      Plot.tip(tips, Plot.pointerX({ x: "x", y: "temperature", title: tipText })),
     ],
   });
 

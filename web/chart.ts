@@ -1,4 +1,6 @@
+import type { RenderFunction } from "@observablehq/plot";
 import { TZ } from "./time";
+import type { WeatherHour } from "./weather";
 
 export interface Theme {
   surface: string;
@@ -105,8 +107,43 @@ export const fmtDayMonth = fmt({ day: "numeric", month: "short" });
 export const fmtDateTime = fmt({ weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 export const fmtDate = fmt({ weekday: "short", day: "numeric", month: "short" });
 export const fmtPct = (v: number | null): string => (v === null ? "n/a" : `${Math.round(v)}%`);
-export const fmtSigned = (v: number | null, unit = ""): string =>
-  v === null ? "n/a" : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(1)}${unit}`;
+export const fmtSigned = (v: number | null, unit = "", digits = 1): string =>
+  v === null ? "n/a" : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${Math.abs(v).toFixed(digits)}${unit}`;
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Render transform for Plot.tip: lines written as "label\tvalue" get their values in one column. */
+export const tipColumns: RenderFunction = function (index, scales, values, dimensions, context, next) {
+  let node: SVGElement | null = null;
+  // Queued before next() so it runs ahead of the tip's own layout pass, which sizes the box from the text.
+  queueMicrotask(() => node?.querySelectorAll("text").forEach(alignColumns));
+  node = next!(index, scales, values, dimensions, context) ?? null;
+  return node;
+};
+
+function alignColumns(text: SVGTextElement): void {
+  const cells = [...text.children].flatMap((line) => {
+    const node = [...line.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes("\t"));
+    if (!node) return [];
+    const [label, value] = node.textContent!.split("\t");
+    const l = document.createElementNS(SVG_NS, "tspan");
+    const v = document.createElementNS(SVG_NS, "tspan");
+    l.textContent = label;
+    v.textContent = value;
+    node.replaceWith(l, v);
+    return [{ l, v }];
+  });
+  if (!cells.length) return;
+  const col = Math.max(...cells.map((c) => c.l.getComputedTextLength())) + 8;
+  for (const { v } of cells) v.setAttribute("x", String(col));
+}
+
+/** Tooltip line for an occupancy hour, from the weather row at the hour's end (precipitation covers the hour before it). */
+export function weatherTipLine(w: WeatherHour | undefined): string {
+  const mm = w?.precipitation ?? 0;
+  const parts = [w?.temperature == null ? null : `${w.temperature} °C`, mm > 0 ? `${mm.toFixed(1)} mm in this hour` : null].filter(Boolean);
+  return parts.length ? `\n${parts.join(", ")}` : "";
+}
+
 export const fmtHour = (h: number): string => `${String(h % 24).padStart(2, "0")}:00`;
 
 export function fmtAge(seconds: number): string {

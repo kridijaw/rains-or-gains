@@ -146,6 +146,7 @@ function draw(which: View[] = ALL, restart = false): void {
             picker,
             history: historyBlocks(s, hourly, width, picker, yMax),
             holidays: s.holidays,
+            weather: Array.isArray(s.weatherToday) ? s.weatherToday : null,
             yMax,
           });
           const value = summary?.value ?? null;
@@ -209,7 +210,8 @@ function historyBlocks(
   const foot = el("div", { className: "chart-foot" }, picker);
   if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
   if (!hourly) return [skeleton(220), foot];
-  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, width, picker, yMax });
+  const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : null;
+  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, width, picker, yMax });
 }
 
 function setHeatMode(mode: HeatMode): void {
