@@ -18,7 +18,7 @@ const HISTORY_DAYS = 90;
 const REFRESH_MS = 5 * 60_000;
 const STUDIO_KEY = "studio";
 
-const picker = document.querySelector<HTMLLabelElement>(".studio-picker")!;
+const studioSwitch = document.querySelector<HTMLElement>(".studio-switch")!;
 const select = document.querySelector<HTMLSelectElement>("#studio")!;
 const studioName = document.querySelector<HTMLElement>("#studio-name")!;
 const progress = document.querySelector<HTMLElement>("#progress")!;
@@ -378,7 +378,7 @@ async function main(): Promise<void> {
 
   if (studios.length > 1) {
     select.replaceChildren(...studios.map((s) => new Option(s.name, String(s.branchId))));
-    picker.hidden = false;
+    studioSwitch.classList.add("pickable");
     select.addEventListener("change", () => {
       const url = new URL(location.href);
       url.searchParams.set("studio", select.value);
