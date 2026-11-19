@@ -1,4 +1,5 @@
 import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
+import { webStorage } from "./cache";
 import { chartWidth, el, infoTip, message, percentMax, reducedMotion, segmented, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
@@ -15,6 +16,7 @@ import { getWeather, getWeatherToday, type WeatherHour } from "./weather";
 
 const HISTORY_DAYS = 90;
 const REFRESH_MS = 5 * 60_000;
+const STUDIO_KEY = "studio";
 
 const picker = document.querySelector<HTMLLabelElement>(".studio-picker")!;
 const select = document.querySelector<HTMLSelectElement>("#studio")!;
@@ -335,8 +337,12 @@ async function render(studio: Studio): Promise<void> {
 }
 
 function selectedStudio(studios: Studio[]): Studio {
-  const wanted = Number(new URLSearchParams(location.search).get("studio"));
-  return studios.find((s) => s.branchId === wanted) ?? studios[0];
+  const find = (v: string | null | undefined) => studios.find((s) => v && s.branchId === Number(v));
+  return (
+    find(new URLSearchParams(location.search).get("studio")) ??
+    find(webStorage("localStorage")?.getItem(STUDIO_KEY)) ??
+    studios[0]
+  );
 }
 
 function watchLayout(): void {
@@ -377,6 +383,11 @@ async function main(): Promise<void> {
       const url = new URL(location.href);
       url.searchParams.set("studio", select.value);
       history.replaceState(null, "", url);
+      try {
+        webStorage("localStorage")?.setItem(STUDIO_KEY, select.value);
+      } catch {
+        // Storage can be blocked or full; the choice then lives only in the URL.
+      }
       void render(selectedStudio(studios));
     });
   }

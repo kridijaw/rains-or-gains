@@ -20,7 +20,7 @@
     }
   ],
   "vars": {
-    // FitX branchIds. 82 = Berlin-East Side Mall.
-    "STUDIOS": [82]
+    // FitX branchIds. 82 = Berlin-East Side Mall, 91 = Berlin-Moabit.
+    "STUDIOS": [82, 91]
   }
 }
