@@ -40,7 +40,11 @@ export interface NowInput {
   /** Shown in place of today's chart when a longer range is picked. */
   history: HTMLElement[] | null;
   holidays: Holiday[] | string | null;
+  /** Top of the % axis, shared with the longer ranges. */
+  yMax: number;
 }
+
+type NowData = Pick<NowInput, "now" | "body" | "model">;
 
 export interface NowSummary {
   value: number | null;
@@ -59,7 +63,7 @@ interface Current {
   term: string | null;
 }
 
-function current({ now, body }: NowInput): Current | null {
+function current({ now, body }: NowData): Current | null {
   const f = freshness(body.latest, now);
   const latest = body.latest;
   if (f.state === "none" || !latest) return null;
@@ -95,7 +99,7 @@ interface Today {
   usualNow: number | null;
 }
 
-function today(input: NowInput): Today {
+function today(input: NowData): Today {
   const { now, model } = input;
   const cur = current(input);
   const { weekday } = berlin(now);
@@ -188,11 +192,8 @@ function hero(input: NowInput, t0: Today): HTMLElement {
   return el("div", { className: "now-hero" }, ...parts);
 }
 
-function todayChart(input: NowInput, t0: Today): HTMLElement[] {
-  const { now, body, model, width } = input;
-  const c = theme();
+function todaySeries({ now, body, model }: NowData, t0: Today) {
   const { weekday, date } = berlin(now);
-  const nowX = hourOfDay(now);
   const day = typicalDay(model, weekday);
 
   const pts: { ts: number; x: number; p: number | null }[] = [];
@@ -216,16 +217,30 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 
   const shown = pts.filter((d) => inDay(d.x));
   const valid = shown.filter((d): d is { ts: number; x: number; p: number } => d.p !== null);
-  const last = valid.at(-1);
   const usualPts = day.flatMap((t, h) =>
     t.value !== null && isComparable(t.source) && inDay(h + 0.5) ? [{ x: h + 0.5, v: t.value }] : [],
   );
-  const usualAt = (x: number) => usualPts.find((u) => Math.floor(u.x) === Math.floor(x))?.v ?? null;
   const expected = t0.outlook?.expected ?? [];
+  return { day, lo, hi, inDay, shown, valid, usualPts, expected };
+}
+
+/** Highest % today's chart shows. */
+export function todayPeak(input: NowData): number {
+  const { valid, usualPts, expected } = todaySeries(input, today(input));
+  return Math.max(...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
+}
+
+function todayChart(input: NowInput, t0: Today): HTMLElement[] {
+  const { now, body, model, width, yMax } = input;
+  const c = theme();
+  const { weekday } = berlin(now);
+  const nowX = hourOfDay(now);
+  const { day, lo, hi, inDay, shown, valid, usualPts, expected } = todaySeries(input, t0);
+  const last = valid.at(-1);
+  const usualAt = (x: number) => usualPts.find((u) => Math.floor(u.x) === Math.floor(x))?.v ?? null;
   const ahead = expected.filter((e) => e.x > nowX);
   const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
   const live = freshness(body.latest, now).state === "ok";
-  const yMax = Math.ceil(Math.max(100, ...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v)) / 20) * 20;
 
   const tips = [
     ...valid.map((d) => {

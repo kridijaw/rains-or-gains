@@ -46,6 +46,8 @@ const LABEL_GAP = 16;
 export const LABELLED = { marginTop: 20 + LABEL_GAP, marginBottom: 30 } as const;
 // Every labelled chart gives each y tick interval this much height, so the cards read at one density.
 export const TICK_STEP = 34;
+/** Top of a % axis that fits every value, at least 100 and on a 20 step. */
+export const percentMax = (values: number[]): number => Math.ceil(Math.max(100, ...values) / 20) * 20;
 export const percentTicks = (max: number): number[] => Array.from({ length: max / 20 + 1 }, (_, i) => i * 20);
 export const labelledHeight = (intervals: number): number => LABELLED.marginTop + intervals * TICK_STEP + LABELLED.marginBottom;
 

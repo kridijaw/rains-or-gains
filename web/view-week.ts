@@ -34,6 +34,27 @@ export interface WeekInput {
   holidays: Holiday[] | string | null;
   width: number;
   picker: HTMLElement;
+  /** Top of the % axis, shared with the other ranges. */
+  yMax: number;
+}
+
+type WeekData = Pick<WeekInput, "now" | "days" | "hourly" | "model">;
+
+function weekPoints({ now, days, hourly, model }: WeekData) {
+  const { from, to } = lastDays(days, now);
+  const firstData = hourly.find((r) => r[1] !== null)?.[0] ?? Infinity;
+  const pts = hourSeries(hourly, from, to, usualValue(model)).map((p) => ({
+    ...p,
+    mid: p.ts + 1800,
+    typical: p.ts >= startOfDay(berlin(firstData === Infinity ? to : firstData).date) ? p.typical : null,
+  }));
+  return { pts, withData: pts.filter((p): p is typeof p & { avg: number } => p.avg !== null) };
+}
+
+/** Highest % the chart for this range shows. */
+export function weekPeak(input: WeekData): number {
+  const { pts, withData } = weekPoints(input);
+  return Math.max(...withData.map((p) => p.avg), ...pts.map((p) => p.typical ?? 0));
 }
 
 // Night shading turns into noise at 30 days, so only the 7 day view gets it.
@@ -63,19 +84,13 @@ export function xAxis(from: number, to: number, days: RangeDays, width: number) 
 }
 
 export function weekBlocks(input: WeekInput): HTMLElement[] {
-  const { now, days, hourly, model, holidays, width } = input;
+  const { now, days, model, holidays, width, yMax } = input;
   const c = theme();
   const { from, to } = lastDays(days, now);
   const x = xAxis(from, to, days, width);
   const blocks: (HTMLElement | null)[] = [];
 
-  const firstData = hourly.find((r) => r[1] !== null)?.[0] ?? Infinity;
-  const pts = hourSeries(hourly, from, to, usualValue(model)).map((p) => ({
-    ...p,
-    mid: p.ts + 1800,
-    typical: p.ts >= startOfDay(berlin(firstData === Infinity ? to : firstData).date) ? p.typical : null,
-  }));
-  const withData = pts.filter((p): p is typeof p & { avg: number } => p.avg !== null);
+  const { pts, withData } = weekPoints(input);
   const hasBand = pts.some((p) => p.typical !== null);
   const holidayList = Array.isArray(holidays) ? holidays : [];
   const school = holidayList
@@ -86,7 +101,6 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
     .filter((h) => h.kind === "public")
     .map((h) => ({ ...h, x: startOfDay(h.start) + 12 * 3600 }))
     .filter((h) => h.x >= from && h.x <= to);
-  const yMax = Math.ceil(Math.max(100, ...withData.map((p) => p.avg), ...pts.map((p) => p.typical ?? 0)) / 20) * 20;
   const closed = days === 7 ? closedSpans(model, from, to) : [];
 
   if (withData.length === 0) {

@@ -1,15 +1,15 @@
 import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
-import { chartWidth, el, infoTip, message, reducedMotion, segmented, skeleton } from "./chart";
+import { chartWidth, el, infoTip, message, percentMax, reducedMotion, segmented, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
 import { berlin, lastDays, startOfDay } from "./time";
 import { buildTypical, type TypicalModel } from "./typical";
 import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
-import { renderNow, type NowSummary } from "./view-now";
+import { renderNow, todayPeak, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
-import { RANGES, weekBlocks, type RangeDays } from "./view-week";
-import { renderWeather, renderWeatherToday } from "./view-weather";
+import { RANGES, weekBlocks, weekPeak, type RangeDays } from "./view-week";
+import { renderWeather, renderWeatherToday, weatherScale } from "./view-weather";
 import { themeToggle } from "./theme";
 import { getWeather, getWeatherToday, type WeatherHour } from "./weather";
 
@@ -137,14 +137,16 @@ function draw(which: View[] = ALL, restart = false): void {
           enter(root, view, restart);
           const width = chartWidth(root);
           const picker = segmented(RANGE_OPTIONS, s.range, setRange, "Time range");
+          const data = { now: s.now, body: s.nowBody, model: s.model };
+          // One axis for every range, so switching ranges does not rescale the chart.
+          const yMax = percentMax([todayPeak(data), ...(hourly ? RANGES.map((days) => weekPeak({ ...data, days, hourly })) : [])]);
           const summary = renderNow(root, {
-            now: s.now,
-            body: s.nowBody,
-            model: s.model,
+            ...data,
             width,
             picker,
-            history: historyBlocks(s, hourly, width, picker),
+            history: historyBlocks(s, hourly, width, picker, yMax),
             holidays: s.holidays,
+            yMax,
           });
           const value = summary?.value ?? null;
           const valueNode = root.querySelector<HTMLElement>(".hero-value");
@@ -167,7 +169,9 @@ function draw(which: View[] = ALL, restart = false): void {
         else if (typeof shown === "string") root.replaceChildren(message(`Weather unavailable: ${shown}`, "error"));
         else {
           enter(root, view, restart);
-          const input = { now: s.now, weather: shown, width: chartWidth(root), picker: segmented(RANGE_OPTIONS, days, setWeatherRange, "Weather time range") };
+          const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null);
+          const picker = segmented(RANGE_OPTIONS, days, setWeatherRange, "Weather time range");
+          const input = { now: s.now, weather: shown, width: chartWidth(root), picker, scale };
           if (days === "now") renderWeatherToday(root, input);
           else renderWeather(root, { ...input, days });
         }
@@ -196,12 +200,13 @@ function historyBlocks(
   hourly: HourlyTuple[] | null,
   width: number,
   picker: HTMLElement,
+  yMax: number,
 ): HTMLElement[] | null {
   if (s.range === "now") return null;
   const foot = el("div", { className: "chart-foot" }, picker);
   if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
   if (!hourly) return [skeleton(220), foot];
-  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, width, picker });
+  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, width, picker, yMax });
 }
 
 function setHeatMode(mode: HeatMode): void {
@@ -314,7 +319,8 @@ async function render(studio: Studio): Promise<void> {
   draw();
 
   await Promise.all([
-    loadWeather(s, s.weatherRange === "now" ? 7 : s.weatherRange),
+    // The longest range up front, so the weather axes fit every range from the first draw.
+    loadWeather(s, Math.max(...RANGES)),
     loadWeatherToday(s),
     holidays.then((h) => {
       s.holidays = h;

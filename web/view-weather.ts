@@ -17,7 +17,7 @@ import {
 } from "./chart";
 import { dailyPrecipitation } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
-import { MARGIN_X, xAxis, type RangeDays } from "./view-week";
+import { MARGIN_X, RANGES, xAxis, type RangeDays } from "./view-week";
 import type { WeatherHour } from "./weather";
 
 export interface WeatherInput {
@@ -26,14 +26,21 @@ export interface WeatherInput {
   weather: WeatherHour[];
   width: number;
   picker: HTMLElement;
+  scale: WeatherScale;
+}
+
+/** Value extents shared by every range, so switching ranges keeps the axes. */
+export interface WeatherScale {
+  tempLo: number;
+  tempHi: number;
+  mmPerHour: number;
+  mmPerDay: number;
 }
 
 const NICE = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
 
 // Both weather axes get the same number of intervals so their ticks share one grid.
-function weatherScales(temps: number[], maxMm: number) {
-  const lo = temps.length ? Math.min(...temps) : 0;
-  const hi = temps.length ? Math.max(...temps) : 10;
+function weatherScales({ tempLo: lo, tempHi: hi }: WeatherScale, maxMm: number) {
   const tStep = NICE.find((s) => Math.ceil(hi / s) - Math.floor(lo / s) <= 5) ?? 100;
   const t0 = Math.floor(lo / tStep) * tStep;
   const n = Math.max(1, Math.ceil(hi / tStep) - Math.floor(lo / tStep));
@@ -47,25 +54,61 @@ function weatherScales(temps: number[], maxMm: number) {
   };
 }
 
-export function renderWeather(root: HTMLElement, input: WeatherInput): void {
-  const { now, days, width } = input;
-  const c = theme();
+const withTemp = (weather: WeatherHour[]) => weather.filter((w): w is WeatherHour & { temperature: number } => w.temperature !== null);
+
+function rangeData(weather: WeatherHour[], days: RangeDays, now: number) {
   const { from, to } = lastDays(days, now);
-  const weather = input.weather.filter((w) => w.ts >= from && w.ts <= to);
+  const shown = weather.filter((w) => w.ts >= from && w.ts <= to);
+  const bars =
+    days === 7
+      ? shown
+          .filter((w) => w.precipitation !== null)
+          .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number }))
+      : dailyPrecipitation(shown)
+          .filter((d) => d.end > from)
+          .map((d) => ({ x1: Math.max(from, d.start), x2: d.end, mm: d.precipitation ?? 0 }));
+  return { from, to, shown, bars };
+}
+
+function todayData(weather: WeatherHour[], now: number) {
+  const date = berlin(now).date;
+  const from = startOfDay(date);
+  const to = startOfDay(addDays(date, 1));
+  const bars = weather
+    .filter((w) => w.ts > from && w.precipitation !== null)
+    .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number, forecast: w.ts > now }));
+  return { from, to, bars };
+}
+
+export function weatherScale(now: number, today: WeatherHour[] | null, history: WeatherHour[] | null): WeatherScale {
+  const temps: number[] = [];
+  const perHour = [0.5];
+  const perDay = [0.5];
+  if (today) {
+    temps.push(...withTemp(today).map((w) => w.temperature));
+    perHour.push(...todayData(today, now).bars.map((b) => b.mm));
+  }
+  for (const days of history ? RANGES : []) {
+    const { shown, bars } = rangeData(history!, days, now);
+    temps.push(...withTemp(shown).map((w) => w.temperature));
+    (days === 7 ? perHour : perDay).push(...bars.map((b) => b.mm));
+  }
+  return {
+    tempLo: temps.length ? Math.min(...temps) : 0,
+    tempHi: temps.length ? Math.max(...temps) : 10,
+    mmPerHour: Math.max(...perHour),
+    mmPerDay: Math.max(...perDay),
+  };
+}
+
+export function renderWeather(root: HTMLElement, input: WeatherInput): void {
+  const { now, days, width, scale } = input;
+  const c = theme();
+  const { from, to, shown: weather, bars } = rangeData(input.weather, days, now);
   const hourlyBars = days === 7;
-  const bars = hourlyBars
-    ? weather
-        .filter((w) => w.precipitation !== null)
-        .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number }))
-    : dailyPrecipitation(weather)
-        .filter((d) => d.end > from)
-        .map((d) => ({ x1: Math.max(from, d.start), x2: d.end, mm: d.precipitation ?? 0 }));
   const dry = bars.every((b) => b.mm === 0);
-  const temps = weather.filter((w): w is WeatherHour & { temperature: number } => w.temperature !== null);
-  const { domain, tempTicks, mmTicks, toY } = weatherScales(
-    temps.map((w) => w.temperature),
-    Math.max(0.5, ...bars.map((b) => b.mm)),
-  );
+  const temps = withTemp(weather);
+  const { domain, tempTicks, mmTicks, toY } = weatherScales(scale, hourlyBars ? scale.mmPerHour : scale.mmPerDay);
   const unit = hourlyBars ? "mm/h" : "mm/day";
   const barAt = (ts: number) => bars.find((b) => ts > b.x1 && ts <= b.x2);
   const tipText = (w: (typeof temps)[number]) => {
@@ -142,27 +185,20 @@ export interface WeatherTodayInput {
   weather: WeatherHour[];
   width: number;
   picker: HTMLElement;
+  scale: WeatherScale;
 }
 
 const DOTTED = { strokeDasharray: "0.5,4", strokeLinecap: "round" } as const;
 
 export function renderWeatherToday(root: HTMLElement, input: WeatherTodayInput): void {
-  const { now, weather, width } = input;
+  const { now, weather, width, scale } = input;
   const c = theme();
-  const date = berlin(now).date;
-  const from = startOfDay(date);
-  const to = startOfDay(addDays(date, 1));
-  const bars = weather
-    .filter((w) => w.ts > from && w.precipitation !== null)
-    .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number, forecast: w.ts > now }));
+  const { from, to, bars } = todayData(weather, now);
   const dry = bars.every((b) => b.mm === 0);
-  const temps = weather.filter((w): w is WeatherHour & { temperature: number } => w.temperature !== null);
+  const temps = withTemp(weather);
   const past = temps.filter((w) => w.ts <= now);
   const ahead = temps.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
-  const { domain, tempTicks, mmTicks, toY } = weatherScales(
-    temps.map((w) => w.temperature),
-    Math.max(0.5, ...bars.map((b) => b.mm)),
-  );
+  const { domain, tempTicks, mmTicks, toY } = weatherScales(scale, scale.mmPerHour);
   const tickHours = hourTicks(0, 24, width);
   const ticks = [];
   for (let ts = from; ts <= to; ts += 3600) if (tickHours.includes(berlin(ts).hour)) ticks.push(ts);
