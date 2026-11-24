@@ -681,8 +681,41 @@ select:hover {
   gap: 0.5rem 1rem;
 }
 
-.chart-foot .segmented {
+.range-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chart-foot .range-nav {
   margin: 0.25rem 0 0 auto;
+}
+
+.range-nav .segmented {
+  margin: 0;
+}
+
+.range-step {
+  display: inline-grid;
+  place-items: center;
+  padding: 0.35rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.range-step:hover:not(:disabled) {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--text) 25%, transparent);
+}
+
+.range-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.range-step svg {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
 .legend li {

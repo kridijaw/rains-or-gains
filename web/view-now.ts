@@ -6,6 +6,7 @@ import {
   dataTable,
   el,
   fmtAge,
+  fmtDate,
   fmtHour,
   fmtPct,
   fmtSigned,
@@ -24,9 +25,9 @@ import {
 } from "./chart";
 import { holidayLabel, type Holiday } from "./holidays";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
-import { berlin } from "./time";
+import { berlin, startOfDay } from "./time";
 import { MIN_FIT_HOURS, MIN_WEEKS, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
-import { fmtMm, fmtTemp, todayWeather, weatherByHour, type WeatherScale } from "./view-weather";
+import { dayHours, dayWeather, fmtMm, fmtTemp, weatherByHour, type WeatherScale } from "./view-weather";
 import type { WeatherHour } from "./weather";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -198,13 +199,34 @@ function hero(input: NowInput, t0: Today): HTMLElement {
   return el("div", { className: "now-hero" }, ...parts);
 }
 
-function todaySeries({ now, body, model }: NowData, t0: Today) {
-  const { weekday, date } = berlin(now);
+/** One Berlin day of 5-minute samples: today, or a past day. */
+interface Day {
+  date: string;
+  weekday: number;
+  samples: NowBody["samples"];
+  model: TypicalModel;
+  hours: OpenHours | null;
+  outlook: Outlook | null;
+  /** The current time while the day is today; null for a past day. */
+  now: number | null;
+}
+
+function todayDay({ now, body, model }: NowData, t0: Today): Day {
+  const { date, weekday } = berlin(now);
+  return { date, weekday, samples: body.samples, model, hours: t0.hours, outlook: t0.outlook, now };
+}
+
+function pastDay(date: string, samples: NowBody["samples"], model: TypicalModel): Day {
+  const { weekday } = berlin(startOfDay(date) + 12 * 3600);
+  return { date, weekday, samples, model, hours: openHours(model, weekday), outlook: null, now: null };
+}
+
+function daySeries({ date, weekday, samples, model, hours, outlook }: Day) {
   const day = typicalDay(model, weekday);
 
   const pts: { ts: number; x: number; p: number | null }[] = [];
   let prev: number | null = null;
-  for (const [ts, p] of body.samples) {
+  for (const [ts, p] of samples) {
     if (berlin(ts).date !== date) continue;
     const x = hourOfDay(ts);
     // On the DST fall-back day the 02:00 hour repeats; break the line instead of drawing backwards.
@@ -215,7 +237,7 @@ function todaySeries({ now, body, model }: NowData, t0: Today) {
   }
 
   // Crop to opening hours, but never hide a non-zero reading.
-  const base = t0.hours ?? { open: 0, close: 24 };
+  const base = hours ?? { open: 0, close: 24 };
   const active = pts.filter((d) => (d.p ?? 0) > 0);
   const lo = Math.min(base.open, ...active.map((d) => Math.floor(d.x)));
   const hi = Math.max(base.close, ...active.map((d) => Math.ceil(d.x)));
@@ -226,30 +248,47 @@ function todaySeries({ now, body, model }: NowData, t0: Today) {
   const usualPts = day.flatMap((t, h) =>
     t.value !== null && isComparable(t.source) && inDay(h + 0.5) ? [{ x: h + 0.5, v: t.value }] : [],
   );
-  const expected = t0.outlook?.expected ?? [];
+  const expected = outlook?.expected ?? [];
   return { day, lo, hi, inDay, shown, valid, usualPts, expected };
 }
 
-/** Highest % today's chart shows. */
-export function todayPeak(input: NowData): number {
-  const { valid, usualPts, expected } = todaySeries(input, today(input));
+function dayPeak(d: Day): number {
+  const { valid, usualPts, expected } = daySeries(d);
   return Math.max(...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
 }
 
-function todayChart(input: NowInput, t0: Today): HTMLElement[] {
-  const { now, body, model, width, yMax } = input;
+/** Highest % today's chart shows. */
+export const todayPeak = (input: NowData): number => dayPeak(todayDay(input, today(input)));
+
+/** Highest % a past day's chart shows. */
+export const pastDayPeak = (date: string, samples: NowBody["samples"], model: TypicalModel): number =>
+  dayPeak(pastDay(date, samples, model));
+
+interface ChartOptions {
+  width: number;
+  picker: HTMLElement;
+  /** Hourly weather for the day; a string is a load error. */
+  weather: WeatherHour[] | string | null;
+  weatherScale: WeatherScale;
+  yMax: number;
+  /** The latest reading is fresh, so it pulses. */
+  live: boolean;
+}
+
+function dayChart(d: Day, input: ChartOptions): HTMLElement[] {
+  const { model, weekday, now } = d;
+  const { width, yMax, live } = input;
   const c = theme();
-  const { weekday } = berlin(now);
-  const nowX = hourOfDay(now);
-  const { day, lo, hi, inDay, shown, valid, usualPts, expected } = todaySeries(input, t0);
+  const nowX = now === null ? null : hourOfDay(now);
+  const { day, lo, hi, inDay, shown, valid, usualPts, expected } = daySeries(d);
   const last = valid.at(-1);
   const usualAt = (x: number) => usualPts.find((u) => Math.floor(u.x) === Math.floor(x))?.v ?? null;
-  const ahead = expected.filter((e) => e.x > nowX);
-  const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
-  const live = freshness(body.latest, now).state === "ok";
+  const ahead = nowX === null ? [] : expected.filter((e) => e.x > nowX);
+  const pick = d.outlook && d.outlook.state !== "after" ? (d.outlook.quieterFrom ?? d.outlook.best) : null;
+  const dayName = now === null ? fmtDate(startOfDay(d.date)) : "Today";
 
-  const weather = Array.isArray(input.weather) ? input.weather : null;
-  const layer = weather && todayWeather(weather, now, { lo, hi }, input.weatherScale, yMax);
+  const weather = Array.isArray(input.weather) ? dayHours(input.weather, d.date) : null;
+  const layer = weather && dayWeather(weather, d.date, now, { lo, hi }, input.weatherScale, yMax);
   const weatherAt = (ts: number) => weatherTipLine(weather?.find((w) => w.ts === Math.floor(ts / 3600) * 3600 + 3600));
   // Every 5 minutes along the drawn expected line, so the tooltip follows the pointer instead of jumping by the hour.
   const expectedAt = (x: number): number | null => {
@@ -262,7 +301,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   };
   const aheadTips: { ts: number; x: number; v: number }[] = [];
   const lastX = expected.at(-1)?.x ?? -Infinity;
-  for (let ts = Math.floor(now / 300) * 300 + 300; hourOfDay(ts) <= lastX && hourOfDay(ts) > nowX; ts += 300) {
+  for (let ts = Math.floor((now ?? Infinity) / 300) * 300 + 300; nowX !== null && hourOfDay(ts) <= lastX && hourOfDay(ts) > nowX; ts += 300) {
     const v = expectedAt(hourOfDay(ts));
     if (v !== null) aheadTips.push({ ts, x: hourOfDay(ts), v });
   }
@@ -291,7 +330,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     y: { domain: [0, yMax] },
     marks: [
       ...percentAxis(yMax),
-      Plot.ruleX(inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
+      Plot.ruleX(nowX !== null && inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
       Plot.ruleY([0], { stroke: c.baseline }),
       ...(layer?.marks ?? []),
       Plot.areaY(shown, { x: "x", y: "p", fill: c.occupancy, fillOpacity: 0.08, className: "reveal" }),
@@ -330,14 +369,14 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
 
   const blocks: HTMLElement[] = [];
   const keys: LegendItem[] = [
-    { label: "Today, every 5 min", key: "line", color: c.occupancy },
+    { label: `${dayName}, every 5 min`, key: "line", color: c.occupancy },
   ];
   if (ahead.length) keys.push({ label: "Expected rest of today", key: "dash", color: c.occupancy });
   if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral, info: USUAL_INFO });
   keys.push(...(layer?.keys ?? []));
   blocks.push(chartBlock(null, chart, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
   if (typeof input.weather === "string") blocks.push(message(`Weather unavailable: ${input.weather}`, "error small"));
-  if (valid.length === 0) blocks.unshift(message("No readings since midnight yet."));
+  if (valid.length === 0) blocks.unshift(message(now === null ? "No readings on this day." : "No readings since midnight yet."));
 
   if (usualPts.length === 0 && model.profile) {
     const profilePts = model.profile[weekday].map((v, h) => ({ x: h + 0.5, v })).filter((d) => inDay(d.x));
@@ -368,7 +407,7 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     byHour.set(h, [...(byHour.get(h) ?? []), d.p]);
   }
   const aheadByHour = new Map(ahead.map((e) => [Math.floor(e.x), e.v]));
-  const weatherHours = weatherByHour(weather ?? [], berlin(now).date);
+  const weatherHours = weatherByHour(weather ?? [], d.date);
   const rows = Array.from({ length: 24 }, (_, h) => h)
     .filter((h) => byHour.has(h) || aheadByHour.has(h) || (day[h].value !== null && inDay(h + 0.5)) || (weatherHours.has(h) && inDay(h + 0.5)))
     .map((h) => {
@@ -376,23 +415,36 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
       const mean = v ? v.reduce((a, b) => a + b, 0) / v.length : null;
       const u = isComparable(day[h].source) ? day[h].value : null;
       const w = weatherHours.get(h);
-      return [fmtHour(h), fmtPct(mean), fmtPct(aheadByHour.get(h) ?? null), fmtPct(u), fmtTemp(w?.temperature), fmtMm(w?.precipitation)];
+      const expectedCol = now === null ? [] : [fmtPct(aheadByHour.get(h) ?? null)];
+      return [fmtHour(h), fmtPct(mean), ...expectedCol, fmtPct(u), fmtTemp(w?.temperature), fmtMm(w?.precipitation)];
     });
-  if (rows.length)
-    blocks.push(dataTable("Today by hour as a table", ["Hour", "Today (mean)", "Expected", "Usual", "Temp.", "Precip."], rows));
+  const head = now === null ? ["Hour", "Mean", "Usual", "Temp.", "Precip."] : ["Hour", "Today (mean)", "Expected", "Usual", "Temp.", "Precip."];
+  if (rows.length) blocks.push(dataTable(`${dayName} by hour as a table`, head, rows));
   return blocks;
 }
 
+export interface PastDayInput extends Omit<ChartOptions, "live"> {
+  date: string;
+  samples: NowBody["samples"];
+  model: TypicalModel;
+}
+
+/** A past day's chart, shown in place of today's when the Now range is stepped back. */
+export const pastDayBlocks = ({ date, samples, model, ...rest }: PastDayInput): HTMLElement[] =>
+  dayChart(pastDay(date, samples, model), { ...rest, live: false });
+
 export function renderNow(root: HTMLElement, input: NowInput): NowSummary | null {
   const t0 = today(input);
-  root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...(input.history ?? todayChart(input, t0)))));
+  const live = freshness(input.body.latest, input.now).state === "ok";
+  const chart = () => dayChart(todayDay(input, t0), { ...input, live });
+  root.replaceChildren(el("div", { className: "now" }, hero(input, t0), el("div", { className: "now-chart" }, ...(input.history ?? chart()))));
   return t0.cur
     ? {
         value: t0.cur.value,
         term: t0.cur.term,
         outlook: t0.text,
         updated: updatedText(input, t0.cur),
-        live: freshness(input.body.latest, input.now).state === "ok",
+        live,
         status: status(input),
       }
     : null;

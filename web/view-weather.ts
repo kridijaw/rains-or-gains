@@ -82,13 +82,13 @@ function rangeData(weather: WeatherHour[], days: RangeDays, now: number) {
   return { shown, bars };
 }
 
-function todayData(weather: WeatherHour[], now: number) {
-  const date = berlin(now).date;
+// `now` is null for a past day, which then has no forecast.
+function dayData(weather: WeatherHour[], date: string, now: number | null) {
   const from = startOfDay(date);
   const to = startOfDay(addDays(date, 1));
   const bars = weather
     .filter((w) => w.ts > from && w.precipitation !== null)
-    .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number, forecast: w.ts > now }));
+    .map((w) => ({ x1: w.ts - 3600, x2: w.ts, mm: w.precipitation as number, forecast: now !== null && w.ts > now }));
   return { from, to, bars };
 }
 
@@ -97,16 +97,24 @@ export function weatherScale(
   today: WeatherHour[] | null,
   history: WeatherHour[] | null,
   ranges: readonly RangeDays[],
+  /** A past window being shown, whose values the axes must also fit. */
+  past: { date: string } | { days: RangeDays; at: number } | null = null,
 ): WeatherScale {
   const temps: number[] = [];
   const perHour = [0.5];
   const perDay = [0.5];
   if (today) {
     temps.push(...withTemp(today).map((w) => w.temperature));
-    perHour.push(...todayData(today, now).bars.map((b) => b.mm));
+    perHour.push(...dayData(today, berlin(now).date, now).bars.map((b) => b.mm));
   }
-  for (const days of history ? ranges : []) {
-    const { shown, bars } = rangeData(history!, days, now);
+  const windows = history ? ranges.map((days) => ({ days, at: now })) : [];
+  if (history && past && "date" in past) {
+    const day = dayHours(history, past.date);
+    temps.push(...withTemp(day).map((w) => w.temperature));
+    perHour.push(...dayData(day, past.date, null).bars.map((b) => b.mm));
+  } else if (history && past && "days" in past) windows.push(past);
+  for (const { days, at } of windows) {
+    const { shown, bars } = rangeData(history!, days, at);
     temps.push(...withTemp(shown).map((w) => w.temperature));
     (days === 7 ? perHour : perDay).push(...bars.map((b) => b.mm));
   }
@@ -118,9 +126,7 @@ export function weatherScale(
   };
 }
 
-function precipKey(perDay: boolean): LegendItem {
-  return { label: perDay ? "Precipitation, mm per day" : "Precipitation, mm per hour", key: "bar", color: theme().rain };
-}
+const precipKey = (): LegendItem => ({ label: "Precipitation", key: "bar", color: theme().rain });
 
 /** Weather for the 7 and 30 day charts, whose x is a timestamp. */
 export function rangeWeather(weather: WeatherHour[], days: RangeDays, now: number, scale: WeatherScale, yMax: number): WeatherLayer {
@@ -152,15 +158,32 @@ export function rangeWeather(weather: WeatherHour[], days: RangeDays, now: numbe
     const title = `${fmtDateTime(w.ts)}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} ${hourlyBars ? "mm in this hour" : "mm that day"}` : "");
     return { x: w.ts, y: o.tempY(w.temperature), title };
   });
-  const keys: LegendItem[] = [{ label: "Temperature, °C", key: "line", color: c.temperature }, precipKey(!hourlyBars)];
+  const keys: LegendItem[] = [{ label: "Temperature", key: "line", color: c.temperature }, precipKey()];
   return { marks, keys, points };
 }
 
-/** Weather for today's chart, whose x is the hour of the day; the forecast for the rest of the day is dotted. */
-export function todayWeather(weather: WeatherHour[], now: number, hours: { lo: number; hi: number }, scale: WeatherScale, yMax: number): WeatherLayer {
+/** A Berlin day's hours from midnight to midnight inclusive, as getWeatherToday returns them. */
+export function dayHours(weather: WeatherHour[], date: string): WeatherHour[] {
+  const from = startOfDay(date);
+  const to = startOfDay(addDays(date, 1));
+  return weather.filter((w) => w.ts >= from && w.ts <= to);
+}
+
+/**
+ * Weather for a day chart, whose x is the hour of the day. `weather` holds that day's hours only.
+ * While the day is today (`now` set), the forecast for the rest of it is dotted.
+ */
+export function dayWeather(
+  weather: WeatherHour[],
+  date: string,
+  now: number | null,
+  hours: { lo: number; hi: number },
+  scale: WeatherScale,
+  yMax: number,
+): WeatherLayer {
   const { lo, hi } = hours;
   const c = theme();
-  const { to, bars: dayBars } = todayData(weather, now);
+  const { to, bars: dayBars } = dayData(weather, date, now);
   const hourX = (ts: number) => (ts >= to ? 24 : hourOfDay(ts));
   const inDay = (x: number) => x >= lo && x <= hi;
   // The DST fall-back day repeats an hour; keep its first pass so the line never runs backwards.
@@ -170,8 +193,8 @@ export function todayWeather(weather: WeatherHour[], now: number, hours: { lo: n
   const shown = pts.filter((w) => inDay(w.x));
   const bars = dayBars.map((b) => ({ ...b, h2: hourX(b.x2) })).filter((b) => inDay(b.h2 - 1) && inDay(b.h2));
   const dry = bars.every((b) => b.mm === 0);
-  const past = shown.filter((w) => w.ts <= now);
-  const ahead = shown.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
+  const past = now === null ? shown : shown.filter((w) => w.ts <= now);
+  const ahead = now === null ? [] : shown.filter((w) => w.ts >= (past.at(-1)?.ts ?? -Infinity));
   const o = overlayScales(scale, scale.mmPerHour, yMax);
   const mmAt = (ts: number) => dayBars.find((b) => b.x2 === ts)?.mm ?? 0;
   const barMarks = (forecast: boolean) =>
@@ -196,10 +219,10 @@ export function todayWeather(weather: WeatherHour[], now: number, hours: { lo: n
   ];
   const points = shown.map((w) => {
     const mm = mmAt(w.ts);
-    const title = `${fmtTime(w.ts)}${w.ts > now ? ", forecast" : ""}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in the hour before` : "");
+    const title = `${fmtTime(w.ts)}${now !== null && w.ts > now ? ", forecast" : ""}\n${w.temperature} °C` + (mm > 0 ? `\n${mm.toFixed(1)} mm in the hour before` : "");
     return { x: w.x, y: tempY(w), title };
   });
-  const keys: LegendItem[] = [{ label: "Temperature, °C", key: "line", color: c.temperature }, precipKey(false)];
+  const keys: LegendItem[] = [{ label: "Temperature", key: "line", color: c.temperature }, precipKey()];
   if (ahead.length > 1 || bars.some((b) => b.forecast && b.mm > 0)) keys.push({ label: "Forecast", key: "dotted", color: c.muted });
   return { marks, keys, points };
 }

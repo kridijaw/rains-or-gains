@@ -33,7 +33,10 @@ export const RANGES = [7, 30] as const;
 export type RangeDays = (typeof RANGES)[number];
 
 export interface WeekInput {
+  /** End of the window: the current time, or the last second of a past day. */
   now: number;
+  /** The window ends on a past day instead of now. */
+  past?: boolean;
   days: RangeDays;
   hourly: HourlyTuple[];
   model: TypicalModel;
@@ -124,7 +127,7 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
   for (const p of layer?.points ?? []) if (!covered.has(p.x - 3600)) tips.push(p);
 
   if (withData.length === 0) {
-    blocks.push(message(`No occupancy data in the last ${days} days yet.`));
+    blocks.push(message(input.past ? `No occupancy data in these ${days} days.` : `No occupancy data in the last ${days} days yet.`));
   }
 
   const occupancy = Plot.plot({

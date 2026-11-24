@@ -59,6 +59,7 @@ Served by the same Worker under `/api/*`; everything else is static assets from 
 |---|---|---|
 | `GET /api/studios` | `[{branchId, name, alias, lat, lon}]` | 1 day (60 s while still empty) |
 | `GET /api/now?branch=82&since=<unix>` | `{latest, samples: [[ts, pct], ...], profile: {fetchedAt, data} \| null}`. `since` defaults to 24 h ago and is capped at 36 h | 60 s |
+| `GET /api/samples?branch=82&from=<unix>&to=<unix>` | `[[ts, pct], ...]` for `from <= ts < to`, at most 36 h (the page asks for one Berlin day) | 1 day once `to` is 15 min in the past, else 60 s |
 | `GET /api/hourly?branch=82&from=<unix>&to=<unix>` | `[[hour_ts, avg, max, n], ...]` for `from <= hour_ts < to`, at most 100 days (the page asks for 90) | 300 s |
 
 `latest` is `{ts, percentage, term, hidden, status, error}` or `null`. In `samples`, hidden gauges have a null percentage. `since`, `from` and `to` must be hour-aligned (multiples of 3600). The edge cache is keyed on the parsed parameters, so extra query params do not bypass it. Invalid parameters return 400 with `{error}`.

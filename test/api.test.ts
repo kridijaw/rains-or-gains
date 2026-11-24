@@ -7,7 +7,9 @@ import {
   parseHourlyQuery,
   parseInteger,
   parseNowQuery,
+  parseSamplesQuery,
   restoreCacheControl,
+  samplesCacheControl,
   toHourly,
   toLatest,
   toProfile,
@@ -87,6 +89,28 @@ describe("parseHourlyQuery", () => {
   it("rejects bounds that are not hour-aligned", () => {
     expect(parseHourlyQuery(q("branch=82&from=3601&to=7200"), STUDIOS).ok).toBe(false);
     expect(parseHourlyQuery(q("branch=82&from=3600&to=7201"), STUDIOS).ok).toBe(false);
+  });
+});
+
+describe("parseSamplesQuery", () => {
+  it("allows a Berlin day, including the 25 hour DST day, and caps at 36 hours", () => {
+    expect(parseSamplesQuery(q(`branch=82&from=0&to=${25 * 3600}`), STUDIOS)).toEqual({
+      ok: true,
+      value: { branch: 82, from: 0, to: 25 * 3600 },
+    });
+    expect(parseSamplesQuery(q(`branch=82&from=0&to=${NOW_MAX_SPAN + 3600}`), STUDIOS)).toEqual({
+      ok: false,
+      error: "range must not exceed 36 hours",
+    });
+  });
+});
+
+describe("samplesCacheControl", () => {
+  it("caches a finished range for a day and leaves a live one to the route default", () => {
+    const now = 1_800_000_000;
+    expect(samplesCacheControl(now - 3600, now)).toBe("public, max-age=86400");
+    expect(samplesCacheControl(now - 60, now)).toBeNull();
+    expect(samplesCacheControl(now + 3600, now)).toBeNull();
   });
 });
 

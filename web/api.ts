@@ -43,5 +43,8 @@ export const getStudios = (): Promise<Studio[]> => getJson("/api/studios");
 export const getNow = (branch: number, since: number): Promise<NowBody> =>
   getJson(`/api/now?branch=${branch}&since=${since}`);
 
-export const getHourly = (branch: number, from: number, to: number): Promise<HourlyTuple[]> =>
+export const getSamples = (branch: number, from: number, to: number): Promise<NowBody["samples"]> =>
+  getJson(`/api/samples?branch=${branch}&from=${from}&to=${to}`);
+
+export const getHourly =(branch: number, from: number, to: number): Promise<HourlyTuple[]> =>
   getJson(`/api/hourly?branch=${branch}&from=${from}&to=${to}`);

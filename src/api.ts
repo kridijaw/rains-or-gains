@@ -84,9 +84,10 @@ export function parseNowQuery(
   return ok({ branch: branch.value, since: Math.max(since, hourFloor(now - NOW_MAX_SPAN)) });
 }
 
-export function parseHourlyQuery(
+function parseRangeQuery(
   params: URLSearchParams,
   studios: readonly number[],
+  maxSpan: number,
 ): Parsed<{ branch: number; from: number; to: number }> {
   const branch = parseBranch(params, studios);
   if (!branch.ok) return fail(branch.error);
@@ -95,9 +96,15 @@ export function parseHourlyQuery(
   if (from === null || to === null || from < 0) return fail("from and to must be non-negative integers (unix seconds)");
   if (from % 3600 !== 0 || to % 3600 !== 0) return fail("from and to must be hour-aligned");
   if (to <= from) return fail("to must be after from");
-  if (to - from > HOURLY_MAX_SPAN) return fail(`range must not exceed ${HOURLY_MAX_SPAN / 86400} days`);
+  if (to - from > maxSpan) return fail(`range must not exceed ${maxSpan % 86400 ? `${maxSpan / 3600} hours` : `${maxSpan / 86400} days`}`);
   return ok({ branch: branch.value, from, to });
 }
+
+export const parseHourlyQuery = (params: URLSearchParams, studios: readonly number[]) =>
+  parseRangeQuery(params, studios, HOURLY_MAX_SPAN);
+
+export const parseSamplesQuery = (params: URLSearchParams, studios: readonly number[]) =>
+  parseRangeQuery(params, studios, NOW_MAX_SPAN);
 
 export function toStudios(rows: StudioRow[], studios: readonly number[]): StudioOut[] {
   return rows
@@ -159,6 +166,26 @@ async function now({ branch, since }: { branch: number; since: number }, env: En
   return json(body);
 }
 
+// The logger writes each sample within a minute of its ts, so a range that ended this long ago is final.
+const SAMPLES_FINAL_AFTER = 15 * 60;
+
+export const samplesCacheControl = (to: number, now: number): string | null =>
+  to <= now - SAMPLES_FINAL_AFTER ? "public, max-age=86400" : null;
+
+async function samples({ branch, from, to }: { branch: number; from: number; to: number }, env: Env): Promise<Response> {
+  const { results } = await env.DB.prepare(
+    "SELECT ts, CASE WHEN hidden = 1 THEN NULL ELSE percentage END AS percentage FROM samples WHERE branch_id = ? AND ts >= ? AND ts < ? ORDER BY ts",
+  )
+    .bind(branch, from, to)
+    .all<{ ts: number; percentage: number | null }>();
+  const cacheControl = samplesCacheControl(to, Math.floor(Date.now() / 1000));
+  return json(
+    results.map((r) => [r.ts, r.percentage]),
+    200,
+    cacheControl ? { "cache-control": cacheControl } : {},
+  );
+}
+
 async function hourly({ branch, from, to }: { branch: number; from: number; to: number }, env: Env): Promise<Response> {
   const { results, meta } = await env.DB.prepare(
     "SELECT hour_ts, avg_pct, max_pct, n FROM hourly WHERE branch_id = ? AND hour_ts >= ? AND hour_ts < ? ORDER BY hour_ts",
@@ -181,6 +208,7 @@ const ROUTES = new Map<string, Route<Record<string, number>>>([
   ["/api/studios", route({ ttl: 86400, parse: () => ok({}), handler: studios })],
   ["/api/now", route({ ttl: 60, parse: (p, env) => parseNowQuery(p, env.STUDIOS, Math.floor(Date.now() / 1000)), handler: now })],
   ["/api/hourly", route({ ttl: 300, parse: (p, env) => parseHourlyQuery(p, env.STUDIOS), handler: hourly })],
+  ["/api/samples", route({ ttl: 60, parse: (p, env) => parseSamplesQuery(p, env.STUDIOS), handler: samples })],
 ]);
 
 export function cacheKeyUrl(origin: string, pathname: string, q: Record<string, number>): string {

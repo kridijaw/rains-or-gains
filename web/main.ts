@@ -1,13 +1,13 @@
-import { getHourly, getNow, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
+import { getHourly, getNow, getSamples, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
 import { webStorage } from "./cache";
 import { chartWidth, el, infoTip, message, percentMax, reducedMotion, segmented, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
-import { berlin, lastDays, startOfDay } from "./time";
+import { addDays, berlin, lastDays, startOfDay } from "./time";
 import { buildTypical, type TypicalModel } from "./typical";
 import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
-import { renderNow, todayPeak, type NowSummary } from "./view-now";
+import { pastDayBlocks, pastDayPeak, renderNow, todayPeak, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
 import { RANGES, weekBlocks, weekPeak, type RangeDays } from "./view-week";
 import { weatherScale, type WeatherScale } from "./view-weather";
@@ -46,6 +46,10 @@ interface State {
   hourlyTo: number;
   model: TypicalModel;
   range: Range;
+  /** Berlin date the Now card's chart ends on; null while it follows the present. */
+  end: string | null;
+  /** 5-minute samples of past days, by Berlin date. */
+  days: Map<string, Loadable<NowBody["samples"]>>;
   heatMode: HeatMode | null;
   weather: Loadable<{ days: number; hours: WeatherHour[] }>;
   weatherToday: Loadable<WeatherHour[]>;
@@ -137,11 +141,23 @@ function draw(which: View[] = ALL, restart = false): void {
         } else if (s.nowBody) {
           enter(root, view, restart);
           const width = chartWidth(root);
-          const picker = segmented(RANGE_OPTIONS, s.range, setRange, "Time range");
+          const focused = document.activeElement;
+          const picker = rangeNav(s, hourly, segmented(RANGE_OPTIONS, s.range, setRange, "Time range"));
           const data = { now: s.now, body: s.nowBody, model: s.model };
+          const at = endTime(s);
+          const pastPeak: number[] = [];
+          if (s.end !== null && s.range === "now") {
+            const samples = s.days.get(s.end);
+            if (Array.isArray(samples)) pastPeak.push(pastDayPeak(s.end, samples, s.model));
+          } else if (s.end !== null && hourly) pastPeak.push(weekPeak({ ...data, now: at, days: s.range as RangeDays, hourly }));
           // One axis for every range, so switching ranges does not rescale the chart.
-          const yMax = percentMax([todayPeak(data), ...(hourly ? RANGES.map((days) => weekPeak({ ...data, days, hourly })) : [])]);
-          const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null, RANGES);
+          const yMax = percentMax([
+            todayPeak(data),
+            ...(hourly ? RANGES.map((days) => weekPeak({ ...data, days, hourly })) : []),
+            ...pastPeak,
+          ]);
+          const past = s.end === null ? null : s.range === "now" ? { date: s.end } : { days: s.range, at };
+          const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null, RANGES, past);
           const summary = renderNow(root, {
             ...data,
             width,
@@ -152,6 +168,8 @@ function draw(which: View[] = ALL, restart = false): void {
             weatherScale: scale,
             yMax,
           });
+          // The step buttons are kept across redraws; put focus back on the one that had it.
+          if (focused instanceof HTMLElement && focused.classList.contains("range-step") && focused.isConnected) focused.focus();
           const value = summary?.value ?? null;
           const valueNode = root.querySelector<HTMLElement>(".hero-value");
           if (value !== null && value !== shownValue && valueNode && !reducedMotion()) countUp(valueNode, shownValue ?? 0, value);
@@ -192,12 +210,79 @@ function historyBlocks(
   yMax: number,
   weatherScale: WeatherScale,
 ): HTMLElement[] | null {
-  if (s.range === "now") return null;
+  if (s.range === "now" && s.end === null) return null;
   const foot = el("div", { className: "chart-foot" }, picker);
+  const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : s.weather;
+  if (s.range === "now") {
+    const samples = s.days.get(s.end!);
+    if (typeof samples === "string") return [message(`Could not load this day: ${samples}`, "error"), foot];
+    if (!samples) return [skeleton(220), foot];
+    return pastDayBlocks({ date: s.end!, samples, model: s.model, width, picker, weather, weatherScale, yMax });
+  }
   if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
   if (!hourly) return [skeleton(220), foot];
-  const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : s.weather;
-  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, weatherScale, width, picker, yMax });
+  const now = endTime(s);
+  return weekBlocks({ now, past: s.end !== null, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, weatherScale, width, picker, yMax });
+}
+
+// The last second of the end date, so lastDays() spans whole days that end there.
+const endTime = (s: State): number => (s.end === null ? s.now : startOfDay(addDays(s.end, 1)) - 1);
+
+const navButtons = new Map<"back" | "forward", { button: HTMLButtonElement; onClick: () => void }>();
+
+function navButton(dir: "back" | "forward", disabled: boolean, onClick: () => void): HTMLButtonElement {
+  let b = navButtons.get(dir);
+  if (!b) {
+    const button = el("button", { className: "range-step" });
+    button.type = "button";
+    button.setAttribute("aria-label", dir === "back" ? "Earlier" : "Later");
+    const path = dir === "back" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6";
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const entry = { button, onClick };
+    button.addEventListener("click", () => entry.onClick());
+    navButtons.set(dir, (b = entry));
+  }
+  b.onClick = onClick;
+  b.button.disabled = disabled;
+  return b.button;
+}
+
+/** The range picker between buttons that step the Now card's chart back and forth by one range. */
+function rangeNav(s: State, hourly: HourlyTuple[] | null, picker: HTMLElement): HTMLElement {
+  const step = s.range === "now" ? 1 : s.range;
+  const today = berlin(s.now).date;
+  const end = s.end ?? today;
+  // Back stops at the first day with data, within the loaded history.
+  const first = addDays(today, 1 - Math.min(HISTORY_DAYS, dataDays(hourly ?? [], s.now)));
+  const back = addDays(end, -step);
+  return el(
+    "div",
+    { className: "range-nav" },
+    navButton("back", back < first, () => setEnd(back)),
+    picker,
+    navButton("forward", s.end === null, () => setEnd(addDays(end, step))),
+  );
+}
+
+function setEnd(date: string): void {
+  if (!state) return;
+  state.end = date >= berlin(state.now).date ? null : date;
+  ensureDay(state);
+  draw(["now"], true);
+}
+
+function ensureDay(s: State): void {
+  const date = s.end;
+  if (s.range !== "now" || date === null) return;
+  const have = s.days.get(date);
+  if (have !== undefined && typeof have !== "string") return;
+  s.days.set(date, null);
+  getSamples(s.studio.branchId, startOfDay(date), startOfDay(addDays(date, 1))).then(
+    (samples) => s.days.set(date, samples),
+    (err) => s.days.set(date, errorText(err)),
+  ).then(() => {
+    if (state === s && s.range === "now" && s.end === date) draw(["now"]);
+  });
 }
 
 function setHeatMode(mode: HeatMode): void {
@@ -229,6 +314,7 @@ async function loadWeatherToday(s: State): Promise<void> {
 function setRange(range: Range): void {
   if (!state) return;
   state.range = range;
+  ensureDay(state);
   draw(["now"], true);
 }
 
@@ -276,6 +362,8 @@ async function render(studio: Studio): Promise<void> {
     hourlyTo: 0,
     model: buildTypical([], null),
     range: state?.range ?? "now",
+    end: state?.end ?? null,
+    days: new Map(),
     heatMode: state?.heatMode ?? null,
     weather: null,
     weatherToday: null,
@@ -283,6 +371,7 @@ async function render(studio: Studio): Promise<void> {
     refreshedAt: Date.now(),
   };
   state = s;
+  ensureDay(s);
   enteredAt.clear();
   shownValue = null;
   for (const [view, root] of Object.entries(views)) root.replaceChildren(skeleton(view === "now" ? 300 : 220));
