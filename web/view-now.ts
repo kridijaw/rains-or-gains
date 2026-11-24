@@ -17,7 +17,7 @@ import {
   MARGIN_X,
   LABELLED,
   labelledHeight,
-  percentTicks,
+  percentAxis,
   message,
   theme,
   type LegendItem,
@@ -26,6 +26,7 @@ import { holidayLabel, type Holiday } from "./holidays";
 import { freshness, hourOfDay, isComparable, lastGood, outlook, termLabel, type Outlook } from "./series";
 import { berlin } from "./time";
 import { MIN_FIT_HOURS, MIN_WEEKS, openHours, typicalDay, type OpenHours, type TypicalModel } from "./typical";
+import { fmtMm, fmtTemp, todayWeather, weatherByHour, type WeatherScale } from "./view-weather";
 import type { WeatherHour } from "./weather";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -44,8 +45,9 @@ export interface NowInput {
   /** Shown in place of today's chart when a longer range is picked. */
   history: HTMLElement[] | null;
   holidays: Holiday[] | string | null;
-  /** Today's hourly weather, for the tooltips of past readings. */
-  weather: WeatherHour[] | null;
+  /** Today's hourly weather with the forecast for the rest of the day; a string is a load error. */
+  weather: WeatherHour[] | string | null;
+  weatherScale: WeatherScale;
   /** Top of the % axis, shared with the longer ranges. */
   yMax: number;
 }
@@ -234,12 +236,6 @@ export function todayPeak(input: NowData): number {
   return Math.max(...valid.map((d) => d.p), ...usualPts.map((d) => d.v), ...expected.map((d) => d.v));
 }
 
-/** Hours today's chart spans, so the weather card's Now chart can match it. */
-export function todayHours(input: NowData): { lo: number; hi: number } {
-  const { lo, hi } = todaySeries(input, today(input));
-  return { lo, hi };
-}
-
 function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const { now, body, model, width, yMax } = input;
   const c = theme();
@@ -252,7 +248,9 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   const pick = t0.outlook && t0.outlook.state !== "after" ? (t0.outlook.quieterFrom ?? t0.outlook.best) : null;
   const live = freshness(body.latest, now).state === "ok";
 
-  const weatherAt = (ts: number) => weatherTipLine(input.weather?.find((w) => w.ts === Math.floor(ts / 3600) * 3600 + 3600));
+  const weather = Array.isArray(input.weather) ? input.weather : null;
+  const layer = weather && todayWeather(weather, now, { lo, hi }, input.weatherScale, yMax);
+  const weatherAt = (ts: number) => weatherTipLine(weather?.find((w) => w.ts === Math.floor(ts / 3600) * 3600 + 3600));
   // Every 5 minutes along the drawn expected line, so the tooltip follows the pointer instead of jumping by the hour.
   const expectedAt = (x: number): number | null => {
     const i = expected.findIndex((e) => e.x >= x);
@@ -277,9 +275,11 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     }),
     ...aheadTips.map((e) => {
       const u = usualAt(e.x);
-      return { x: e.x, y: e.v, title: `${fmtTime(e.ts)}\nExpected\t${fmtPct(e.v)}${u === null ? "" : `\nUsual\t${fmtPct(u)}`}` };
+      return { x: e.x, y: e.v, title: `${fmtTime(e.ts)}\nExpected\t${fmtPct(e.v)}${u === null ? "" : `\nUsual\t${fmtPct(u)}`}${weatherAt(e.ts)}` };
     }),
   ];
+  const covered = new Set(tips.map((t) => Math.floor(t.x)));
+  for (const p of layer?.points ?? []) if (!covered.has(Math.floor(p.x)) && !covered.has(Math.ceil(p.x) - 1)) tips.push(p);
 
   const chart = Plot.plot({
     width,
@@ -288,10 +288,12 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     ...LABELLED,
     style: { overflow: "visible" },
     x: { domain: [lo, hi], ticks: hourTicks(lo, hi, width), tickFormat: fmtHour, label: null },
-    y: { domain: [0, yMax], grid: true, ticks: percentTicks(yMax), label: "%", tickFormat: (v: number) => `${v}` },
+    y: { domain: [0, yMax] },
     marks: [
+      ...percentAxis(yMax),
       Plot.ruleX(inDay(nowX) ? [nowX] : [], { stroke: c.grid, strokeWidth: 1 }),
       Plot.ruleY([0], { stroke: c.baseline }),
+      ...(layer?.marks ?? []),
       Plot.areaY(shown, { x: "x", y: "p", fill: c.occupancy, fillOpacity: 0.08, className: "reveal" }),
       Plot.line(usualPts, { x: "x", y: "v", stroke: c.neutral, strokeWidth: 2, className: "fade" }),
       Plot.line(expected, {
@@ -332,7 +334,9 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
   ];
   if (ahead.length) keys.push({ label: "Expected rest of today", key: "dash", color: c.occupancy });
   if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral, info: USUAL_INFO });
+  keys.push(...(layer?.keys ?? []));
   blocks.push(chartBlock(null, chart, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
+  if (typeof input.weather === "string") blocks.push(message(`Weather unavailable: ${input.weather}`, "error small"));
   if (valid.length === 0) blocks.unshift(message("No readings since midnight yet."));
 
   if (usualPts.length === 0 && model.profile) {
@@ -364,15 +368,18 @@ function todayChart(input: NowInput, t0: Today): HTMLElement[] {
     byHour.set(h, [...(byHour.get(h) ?? []), d.p]);
   }
   const aheadByHour = new Map(ahead.map((e) => [Math.floor(e.x), e.v]));
+  const weatherHours = weatherByHour(weather ?? [], berlin(now).date);
   const rows = Array.from({ length: 24 }, (_, h) => h)
-    .filter((h) => byHour.has(h) || aheadByHour.has(h) || (day[h].value !== null && inDay(h + 0.5)))
+    .filter((h) => byHour.has(h) || aheadByHour.has(h) || (day[h].value !== null && inDay(h + 0.5)) || (weatherHours.has(h) && inDay(h + 0.5)))
     .map((h) => {
       const v = byHour.get(h);
       const mean = v ? v.reduce((a, b) => a + b, 0) / v.length : null;
       const u = isComparable(day[h].source) ? day[h].value : null;
-      return [fmtHour(h), fmtPct(mean), fmtPct(aheadByHour.get(h) ?? null), fmtPct(u)];
+      const w = weatherHours.get(h);
+      return [fmtHour(h), fmtPct(mean), fmtPct(aheadByHour.get(h) ?? null), fmtPct(u), fmtTemp(w?.temperature), fmtMm(w?.precipitation)];
     });
-  if (rows.length) blocks.push(dataTable("Today by hour as a table", ["Hour", "Today (mean)", "Expected", "Usual"], rows));
+  if (rows.length)
+    blocks.push(dataTable("Today by hour as a table", ["Hour", "Today (mean)", "Expected", "Usual", "Temp.", "Precip."], rows));
   return blocks;
 }
 

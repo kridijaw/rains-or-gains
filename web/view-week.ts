@@ -14,18 +14,19 @@ import {
   MARGIN_X,
   LABELLED,
   labelledHeight,
-  percentTicks,
+  percentAxis,
   message,
   el,
   theme,
   tipColumns,
   weatherTipLine,
-  type LegendKey,
+  type LegendItem,
 } from "./chart";
 import { dayKind, holidayCalendar, type Holiday } from "./holidays";
 import { dayTicks, hourSeries, usualValue } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
 import { openHours, type TypicalModel } from "./typical";
+import { fmtMm, fmtTemp, rangeWeather, weatherByDay, type WeatherScale } from "./view-weather";
 import type { WeatherHour } from "./weather";
 
 export const RANGES = [7, 30] as const;
@@ -37,8 +38,9 @@ export interface WeekInput {
   hourly: HourlyTuple[];
   model: TypicalModel;
   holidays: Holiday[] | string | null;
-  /** Hourly weather, for the tooltip. */
-  weather: WeatherHour[] | null;
+  /** Hourly weather; a string is a load error. */
+  weather: WeatherHour[] | string | null;
+  weatherScale: WeatherScale;
   width: number;
   picker: HTMLElement;
   /** Top of the % axis, shared with the other ranges. */
@@ -106,7 +108,20 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
     .map((h) => ({ ...h, x: startOfDay(h.start) + 12 * 3600 }))
     .filter((h) => h.x >= from && h.x <= to);
   const closed = days === 7 ? closedSpans(model, from, to) : [];
-  const weatherByTs = new Map((input.weather ?? []).map((w) => [w.ts, w]));
+  const weather = Array.isArray(input.weather) ? input.weather : null;
+  const weatherByTs = new Map((weather ?? []).map((w) => [w.ts, w]));
+  const layer = weather && rangeWeather(weather, days, now, input.weatherScale, yMax);
+  const tips = withData.map((p) => ({
+    x: p.mid,
+    y: p.avg,
+    title:
+      `${fmtDateTime(p.ts)}\nMean\t${fmtPct(p.avg)}\nMax\t${p.max}%` +
+      (p.typical === null ? "" : `\nUsual\t${fmtPct(p.typical)} (${fmtSigned(Math.round(p.avg) - Math.round(p.typical), "", 0)})`) +
+      weatherTipLine(weatherByTs.get(p.ts + 3600)) +
+      (p.n < 12 ? `\n${p.n} of 12 samples` : ""),
+  }));
+  const covered = new Set(withData.map((p) => p.ts));
+  for (const p of layer?.points ?? []) if (!covered.has(p.x - 3600)) tips.push(p);
 
   if (withData.length === 0) {
     blocks.push(message(`No occupancy data in the last ${days} days yet.`));
@@ -118,8 +133,9 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
     ...MARGIN_X,
     ...LABELLED,
     x,
-    y: { domain: [0, yMax], grid: true, ticks: percentTicks(yMax), label: "%" },
+    y: { domain: [0, yMax] },
     marks: [
+      ...percentAxis(yMax),
       Plot.rect(closed, { x1: "x1", x2: "x2", fill: c.neutral, fillOpacity: 0.1 }),
       Plot.rect(school, {
         x1: "x1",
@@ -141,40 +157,29 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
         title: (h) => `${h.name}, ${fmtDate(h.x)}`,
       }),
       Plot.ruleY([0], { stroke: c.baseline }),
+      ...(layer?.marks ?? []),
       Plot.areaY(pts, { x: "mid", y: "typical", fill: c.occupancy, fillOpacity: 0.14, curve: "step", className: "fade" }),
       Plot.line(pts, { x: "mid", y: "avg", stroke: c.occupancy, strokeWidth: days === 7 ? 2 : 1.5, className: "reveal" }),
-      Plot.ruleX(withData, Plot.pointerX({ x: "mid", stroke: c.faint })),
-      Plot.tip(
-        withData,
-        Plot.pointerX({
-          x: "mid",
-          y: "avg",
-          title: (p) =>
-            `${fmtDateTime(p.ts)}\nMean\t${fmtPct(p.avg)}\nMax\t${p.max}%` +
-            (p.typical === null ? "" : `\nUsual\t${fmtPct(p.typical)} (${fmtSigned(Math.round(p.avg) - Math.round(p.typical), "", 0)})`) +
-            weatherTipLine(weatherByTs.get(p.ts + 3600)) +
-            (p.n < 12 ? `\n${p.n} of 12 samples` : ""),
-          render: tipColumns,
-        }),
-      ),
+      Plot.ruleX(tips, Plot.pointerX({ x: "x", stroke: c.faint })),
+      Plot.tip(tips, Plot.pointerX({ x: "x", y: "y", title: "title", render: tipColumns })),
     ],
   });
 
-  const keys: { label: string; key: LegendKey; color: string }[] = [
-    { label: "Hourly mean", key: "line", color: c.occupancy },
-  ];
+  const keys: LegendItem[] = [{ label: "Hourly mean", key: "line", color: c.occupancy }];
   if (hasBand) keys.push({ label: "Usual", key: "wash", color: c.occupancy });
-  if (closed.length) keys.push({ label: "Closed", key: "wash", color: c.neutral });
+  keys.push(...(layer?.keys ?? []));
   if (school.length) keys.push({ label: "School holidays", key: "ribbon", color: c.neutral });
   if (publicDays.length) keys.push({ label: "Public holiday", key: "triangle", color: c.muted });
+  if (closed.length) keys.push({ label: "Closed", key: "wash", color: c.neutral });
   blocks.push(chartBlock(null, occupancy, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
   if (typeof holidays === "string") blocks.push(message(`Holidays unavailable: ${holidays}`, "error small"));
+  if (typeof input.weather === "string") blocks.push(message(`Weather unavailable: ${input.weather}`, "error small"));
 
   blocks.push(dayTable(input, from, to));
   return blocks.filter((b): b is HTMLElement => b !== null);
 }
 
-function dayTable({ hourly, holidays }: WeekInput, from: number, to: number): HTMLElement {
+function dayTable({ hourly, holidays, weather }: WeekInput, from: number, to: number): HTMLElement {
   const days = new Map<string, { sum: number; n: number; max: number }>();
   const day = (date: string) => {
     let d = days.get(date);
@@ -189,18 +194,23 @@ function dayTable({ hourly, holidays }: WeekInput, from: number, to: number): HT
     d.max = Math.max(d.max, max ?? -Infinity);
   }
   const calendar = holidayCalendar(Array.isArray(holidays) ? holidays : []);
-  const rows = [...days.entries()]
-    .filter(([date]) => date >= berlin(from).date && date <= berlin(to - 1).date)
-    .sort(([a], [b]) => (a < b ? 1 : -1))
-    .map(([date, d]) => {
+  const weatherDays = weatherByDay(Array.isArray(weather) ? weather.filter((w) => w.ts > from && w.ts <= to) : []);
+  const rows = [...new Set([...days.keys(), ...weatherDays.keys()])]
+    .filter((date) => date >= berlin(from).date && date <= berlin(to - 1).date)
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((date) => {
+      const d = days.get(date);
+      const w = weatherDays.get(date);
       const kind = dayKind(calendar, date);
       const names = (calendar.get(date) ?? []).map((h) => h.name).join(", ");
       return [
         fmtDate(startOfDay(date)),
-        d.n ? fmtPct(d.sum / d.n) : "n/a",
-        Number.isFinite(d.max) ? `${d.max}%` : "n/a",
+        d?.n ? fmtPct(d.sum / d.n) : "n/a",
+        d && Number.isFinite(d.max) ? `${d.max}%` : "n/a",
+        fmtTemp(w?.temp),
+        fmtMm(w?.mm),
         kind ? `${kind === "public" ? "Public" : "School"}: ${names}` : "",
       ];
     });
-  return dataTable("Days as a table", ["Day", "Mean", "Max", "Holiday"], rows);
+  return dataTable("Days as a table", ["Day", "Mean", "Max", "Temp.", "Precip.", "Holiday"], rows);
 }

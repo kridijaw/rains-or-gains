@@ -1,3 +1,4 @@
+import * as Plot from "@observablehq/plot";
 import type { RenderFunction } from "@observablehq/plot";
 import { TZ } from "./time";
 import type { WeatherHour } from "./weather";
@@ -43,8 +44,8 @@ export function theme(): Theme {
 }
 
 export const MARGIN = { marginLeft: 40, marginRight: 16 } as const;
-// Wide enough for the weather card's precipitation axis, so time series in different cards line up.
-export const MARGIN_X = { ...MARGIN, marginRight: 40 };
+// Room for the °C and precipitation axes on the right of the occupancy charts.
+export const MARGIN_X = { ...MARGIN, marginRight: 80 };
 // Plot pins a top-anchored y label to the SVG's top edge; this keeps it clear of the top tick.
 const LABEL_GAP = 16;
 export const LABELLED = { marginTop: 20 + LABEL_GAP, marginBottom: 30 } as const;
@@ -53,6 +54,8 @@ export const TICK_STEP = 34;
 /** Top of a % axis that fits every value, at least 100 and on a 20 step. */
 export const percentMax = (values: number[]): number => Math.ceil(Math.max(100, ...values) / 20) * 20;
 export const percentTicks = (max: number): number[] => Array.from({ length: max / 20 + 1 }, (_, i) => i * 20);
+// Explicit, because a chart that adds its own y axes (the weather overlay) loses Plot's implicit one.
+export const percentAxis = (max: number) => [Plot.gridY(percentTicks(max)), Plot.axisY(percentTicks(max), { label: "%" })];
 export const labelledHeight = (intervals: number): number => LABELLED.marginTop + intervals * TICK_STEP + LABELLED.marginBottom;
 
 type Child = Node | string | null | false | undefined;

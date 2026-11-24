@@ -7,10 +7,10 @@ import { berlin, lastDays, startOfDay } from "./time";
 import { buildTypical, type TypicalModel } from "./typical";
 import { EFFECT_INFO, renderEffect } from "./view-effect";
 import { renderHeatmap, type HeatMode } from "./view-heatmap";
-import { renderNow, todayHours, todayPeak, type NowSummary } from "./view-now";
+import { renderNow, todayPeak, type NowSummary } from "./view-now";
 import { renderProgress } from "./view-progress";
 import { RANGES, weekBlocks, weekPeak, type RangeDays } from "./view-week";
-import { renderWeather, renderWeatherToday, weatherScale } from "./view-weather";
+import { weatherScale, type WeatherScale } from "./view-weather";
 import { themeToggle } from "./theme";
 import { getWeather, getWeatherToday, type WeatherHour } from "./weather";
 
@@ -27,10 +27,10 @@ const nowUpdated = document.querySelector<HTMLElement>("#now-updated")!;
 const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
 const baseTitle = document.title;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
-const views = { now: body("view-now"), weather: body("view-weather"), heatmap: body("view-heatmap"), effect: body("view-effect") };
+const views = { now: body("view-now"), heatmap: body("view-heatmap"), effect: body("view-effect") };
 document.querySelector("#view-effect h2")!.append(infoTip(EFFECT_INFO));
 type View = keyof typeof views;
-const ALL: View[] = ["now", "weather", "heatmap", "effect"];
+const ALL: View[] = ["now", "heatmap", "effect"];
 
 type Range = "now" | RangeDays;
 const RANGE_OPTIONS = [{ value: "now" as Range, label: "Now" }, ...RANGES.map((d) => ({ value: d as Range, label: `${d} days` }))];
@@ -46,7 +46,6 @@ interface State {
   hourlyTo: number;
   model: TypicalModel;
   range: Range;
-  weatherRange: Range;
   heatMode: HeatMode | null;
   weather: Loadable<{ days: number; hours: WeatherHour[] }>;
   weatherToday: Loadable<WeatherHour[]>;
@@ -142,13 +141,15 @@ function draw(which: View[] = ALL, restart = false): void {
           const data = { now: s.now, body: s.nowBody, model: s.model };
           // One axis for every range, so switching ranges does not rescale the chart.
           const yMax = percentMax([todayPeak(data), ...(hourly ? RANGES.map((days) => weekPeak({ ...data, days, hourly })) : [])]);
+          const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null, RANGES);
           const summary = renderNow(root, {
             ...data,
             width,
             picker,
-            history: historyBlocks(s, hourly, width, picker, yMax),
+            history: historyBlocks(s, hourly, width, picker, yMax, scale),
             holidays: s.holidays,
-            weather: Array.isArray(s.weatherToday) ? s.weatherToday : null,
+            weather: s.weatherToday,
+            weatherScale: scale,
             yMax,
           });
           const value = summary?.value ?? null;
@@ -162,24 +163,6 @@ function draw(which: View[] = ALL, restart = false): void {
           const hero = root.querySelector(".hero");
           heroWatcher.disconnect();
           if (hero) heroWatcher.observe(hero);
-        }
-        continue;
-      }
-      if (view === "weather") {
-        const days = s.weatherRange;
-        const shown = days === "now" ? s.weatherToday : weather;
-        if (shown === null) root.replaceChildren(skeleton(220));
-        else if (typeof shown === "string") root.replaceChildren(message(`Weather unavailable: ${shown}`, "error"));
-        else {
-          enter(root, view, restart);
-          const scale = weatherScale(s.now, Array.isArray(s.weatherToday) ? s.weatherToday : null, Array.isArray(weather) ? weather : null);
-          const picker = segmented(RANGE_OPTIONS, days, setWeatherRange, "Weather time range");
-          const input = { now: s.now, weather: shown, width: chartWidth(root), picker, scale };
-          if (days === "now") {
-            const hours =
-              s.nowBody && typeof s.nowBody === "object" ? todayHours({ now: s.now, body: s.nowBody, model: s.model }) : { lo: 0, hi: 24 };
-            renderWeatherToday(root, { ...input, hours });
-          } else renderWeather(root, { ...input, days });
         }
         continue;
       }
@@ -207,13 +190,14 @@ function historyBlocks(
   width: number,
   picker: HTMLElement,
   yMax: number,
+  weatherScale: WeatherScale,
 ): HTMLElement[] | null {
   if (s.range === "now") return null;
   const foot = el("div", { className: "chart-foot" }, picker);
   if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
   if (!hourly) return [skeleton(220), foot];
-  const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : null;
-  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, width, picker, yMax });
+  const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : s.weather;
+  return weekBlocks({ now: s.now, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, weatherScale, width, picker, yMax });
 }
 
 function setHeatMode(mode: HeatMode): void {
@@ -248,19 +232,6 @@ function setRange(range: Range): void {
   draw(["now"], true);
 }
 
-async function setWeatherRange(days: Range): Promise<void> {
-  const s = state;
-  if (!s) return;
-  s.weatherRange = days;
-  if (days === "now") return draw(["weather"], true);
-  if (s.weather !== null && typeof s.weather !== "string" && s.weather.days >= days) return draw(["weather"], true);
-  views.weather.classList.add("loading");
-  await loadWeather(s, days);
-  if (state !== s) return;
-  draw(["weather"], true);
-  draw(["effect"]);
-}
-
 const profileOf = (body: Loadable<NowBody>) => (typeof body === "object" ? body?.profile?.data : null);
 
 async function loadHourly(s: State): Promise<void> {
@@ -288,7 +259,7 @@ async function refreshNow(): Promise<void> {
   }
   await loadWeatherToday(s);
   if (state !== s) return;
-  if (!newHour) return draw(["now", "weather"]);
+  if (!newHour) return draw(["now"]);
   await loadHourly(s);
   if (state === s) draw();
 }
@@ -305,7 +276,6 @@ async function render(studio: Studio): Promise<void> {
     hourlyTo: 0,
     model: buildTypical([], null),
     range: state?.range ?? "now",
-    weatherRange: state?.weatherRange ?? "now",
     heatMode: state?.heatMode ?? null,
     weather: null,
     weatherToday: null,
@@ -333,7 +303,7 @@ async function render(studio: Studio): Promise<void> {
       s.holidays = h;
     }),
   ]);
-  if (state === s) draw(["now", "weather", "effect"]);
+  if (state === s) draw(["now", "effect"]);
 }
 
 function selectedStudio(studios: Studio[]): Studio {
@@ -372,7 +342,7 @@ async function main(): Promise<void> {
   }
   if (studios.length === 0) {
     views.now.replaceChildren(message("No studios logged yet. The first sample arrives within 5 minutes of deploying."));
-    for (const v of [views.weather, views.heatmap, views.effect]) v.replaceChildren(message("Waiting for the first sample."));
+    for (const v of [views.heatmap, views.effect]) v.replaceChildren(message("Waiting for the first sample."));
     return;
   }
 
