@@ -41,8 +41,6 @@ export interface NowInput {
   body: NowBody;
   model: TypicalModel;
   width: number;
-  /** Range picker, placed at the bottom right of the chart. */
-  picker: HTMLElement;
   /** Shown in place of today's chart when a longer range is picked. */
   history: HTMLElement[] | null;
   holidays: Holiday[] | string | null;
@@ -266,7 +264,6 @@ export const pastDayPeak = (date: string, samples: NowBody["samples"], model: Ty
 
 interface ChartOptions {
   width: number;
-  picker: HTMLElement;
   /** Hourly weather for the day; a string is a load error. */
   weather: WeatherHour[] | string | null;
   weatherScale: WeatherScale;
@@ -374,7 +371,7 @@ function dayChart(d: Day, input: ChartOptions): HTMLElement[] {
   if (ahead.length) keys.push({ label: "Expected rest of today", key: "dash", color: c.occupancy });
   if (usualPts.length) keys.push({ label: `Usual ${DAY_NAMES[weekday]}`, key: "line", color: c.neutral, info: USUAL_INFO });
   keys.push(...(layer?.keys ?? []));
-  blocks.push(chartBlock(null, chart, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
+  blocks.push(chartBlock(null, chart, el("div", { className: "chart-foot" }, legend(keys))));
   if (typeof input.weather === "string") blocks.push(message(`Weather unavailable: ${input.weather}`, "error small"));
   if (valid.length === 0) blocks.unshift(message(now === null ? "No readings on this day." : "No readings since midnight yet."));
 

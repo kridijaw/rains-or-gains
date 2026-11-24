@@ -1,6 +1,6 @@
 import { getHourly, getNow, getSamples, getStudios, type HourlyTuple, type NowBody, type Studio } from "./api";
 import { webStorage } from "./cache";
-import { chartWidth, el, infoTip, message, percentMax, reducedMotion, segmented, skeleton } from "./chart";
+import { chartWidth, el, fmtDate, infoTip, message, percentMax, reducedMotion, segmented, skeleton } from "./chart";
 import { getHolidays, type Holiday } from "./holidays";
 import { dataDays, dataProgress } from "./series";
 import { addDays, berlin, lastDays, startOfDay } from "./time";
@@ -25,6 +25,7 @@ const progress = document.querySelector<HTMLElement>("#progress")!;
 const sticky = document.querySelector<HTMLAnchorElement>("#sticky-now")!;
 const nowUpdated = document.querySelector<HTMLElement>("#now-updated")!;
 const nowStatus = document.querySelector<HTMLElement>("#now-status")!;
+const nowControls = document.querySelector<HTMLElement>("#now-controls")!;
 const baseTitle = document.title;
 const body = (id: string) => document.querySelector<HTMLElement>(`#${id} .view-body`)!;
 const views = { now: body("view-now"), heatmap: body("view-heatmap"), effect: body("view-effect") };
@@ -134,6 +135,7 @@ function draw(which: View[] = ALL, restart = false): void {
       if (view === "now") {
         nowUpdated.textContent = "";
         nowUpdated.classList.remove("live");
+        nowControls.replaceChildren();
         if (typeof s.nowBody === "string") {
           root.replaceChildren(message(`Could not load: ${s.nowBody}`, "error"));
           setStatus(null);
@@ -142,7 +144,8 @@ function draw(which: View[] = ALL, restart = false): void {
           enter(root, view, restart);
           const width = chartWidth(root);
           const focused = document.activeElement;
-          const picker = rangeNav(s, hourly, segmented(RANGE_OPTIONS, s.range, setRange, "Time range"));
+          const nav = rangeNav(s, hourly, segmented(RANGE_OPTIONS, s.range, setRange, "Time range"));
+          nowControls.replaceChildren(nav, ...(s.end === null ? [] : [periodHead(s)]));
           const data = { now: s.now, body: s.nowBody, model: s.model };
           const at = endTime(s);
           const pastPeak: number[] = [];
@@ -161,8 +164,7 @@ function draw(which: View[] = ALL, restart = false): void {
           const summary = renderNow(root, {
             ...data,
             width,
-            picker,
-            history: historyBlocks(s, hourly, width, picker, yMax, scale),
+            history: historyBlocks(s, hourly, width, yMax, scale),
             holidays: s.holidays,
             weather: s.weatherToday,
             weatherScale: scale,
@@ -170,6 +172,7 @@ function draw(which: View[] = ALL, restart = false): void {
           });
           // The step buttons are kept across redraws; put focus back on the one that had it.
           if (focused instanceof HTMLElement && focused.classList.contains("range-step") && focused.isConnected) focused.focus();
+          else if (focused?.classList.contains("to-today")) navButtons.get("back")?.button.focus();
           const value = summary?.value ?? null;
           const valueNode = root.querySelector<HTMLElement>(".hero-value");
           if (value !== null && value !== shownValue && valueNode && !reducedMotion()) countUp(valueNode, shownValue ?? 0, value);
@@ -206,23 +209,31 @@ function historyBlocks(
   s: State,
   hourly: HourlyTuple[] | null,
   width: number,
-  picker: HTMLElement,
   yMax: number,
   weatherScale: WeatherScale,
 ): HTMLElement[] | null {
   if (s.range === "now" && s.end === null) return null;
-  const foot = el("div", { className: "chart-foot" }, picker);
   const weather = s.weather && typeof s.weather === "object" ? s.weather.hours : s.weather;
   if (s.range === "now") {
     const samples = s.days.get(s.end!);
-    if (typeof samples === "string") return [message(`Could not load this day: ${samples}`, "error"), foot];
-    if (!samples) return [skeleton(220), foot];
-    return pastDayBlocks({ date: s.end!, samples, model: s.model, width, picker, weather, weatherScale, yMax });
+    if (typeof samples === "string") return [message(`Could not load this day: ${samples}`, "error")];
+    if (!samples) return [skeleton(220)];
+    return pastDayBlocks({ date: s.end!, samples, model: s.model, width, weather, weatherScale, yMax });
   }
-  if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error"), foot];
-  if (!hourly) return [skeleton(220), foot];
+  if (typeof s.hourly === "string") return [message(`Could not load history: ${s.hourly}`, "error")];
+  if (!hourly) return [skeleton(220)];
   const now = endTime(s);
-  return weekBlocks({ now, past: s.end !== null, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, weatherScale, width, picker, yMax });
+  return weekBlocks({ now, past: s.end !== null, days: s.range, hourly, model: s.model, holidays: s.holidays, weather, weatherScale, width, yMax });
+}
+
+/** The past date or dates the chart shows, with a way back to today. */
+function periodHead(s: State): HTMLElement {
+  const end = s.end!;
+  const text = s.range === "now" ? fmtDate(startOfDay(end)) : `${fmtDate(startOfDay(addDays(end, 1 - s.range)))} to ${fmtDate(startOfDay(end))}`;
+  const back = el("button", { className: "to-today", text: "Back to today" });
+  back.type = "button";
+  back.addEventListener("click", () => setEnd(berlin(s.now).date));
+  return el("div", { className: "period-head" }, el("strong", { className: "period-date", text }), back);
 }
 
 // The last second of the end date, so lastDays() spans whole days that end there.

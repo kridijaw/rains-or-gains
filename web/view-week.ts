@@ -45,7 +45,6 @@ export interface WeekInput {
   weather: WeatherHour[] | string | null;
   weatherScale: WeatherScale;
   width: number;
-  picker: HTMLElement;
   /** Top of the % axis, shared with the other ranges. */
   yMax: number;
 }
@@ -174,7 +173,7 @@ export function weekBlocks(input: WeekInput): HTMLElement[] {
   if (school.length) keys.push({ label: "School holidays", key: "ribbon", color: c.neutral });
   if (publicDays.length) keys.push({ label: "Public holiday", key: "triangle", color: c.muted });
   if (closed.length) keys.push({ label: "Closed", key: "wash", color: c.neutral });
-  blocks.push(chartBlock(null, occupancy, el("div", { className: "chart-foot" }, legend(keys), input.picker)));
+  blocks.push(chartBlock(null, occupancy, el("div", { className: "chart-foot" }, legend(keys))));
   if (typeof holidays === "string") blocks.push(message(`Holidays unavailable: ${holidays}`, "error small"));
   if (typeof input.weather === "string") blocks.push(message(`Weather unavailable: ${input.weather}`, "error small"));
 

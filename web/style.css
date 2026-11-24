@@ -273,6 +273,45 @@ select:hover {
   animation-delay: 180ms;
 }
 
+.view-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.view-head h2 {
+  margin: 0;
+}
+
+#now-controls {
+  display: contents;
+}
+
+.period-head {
+  grid-column: 2;
+  justify-self: end;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.period-date {
+  font-weight: 600;
+}
+
+.to-today {
+  font-size: 0.85rem;
+  color: var(--series-1);
+  cursor: pointer;
+}
+
+.to-today:hover {
+  border-color: color-mix(in srgb, var(--series-1) 50%, transparent);
+}
+
 .view-body {
   min-width: 0;
   transition: opacity 0.15s;
@@ -685,10 +724,6 @@ select:hover {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-}
-
-.chart-foot .range-nav {
-  margin: 0.25rem 0 0 auto;
 }
 
 .range-nav .segmented {
@@ -1155,6 +1190,26 @@ a:hover {
 }
 
 @media (max-width: 480px) {
+  #view-now {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  #view-now .view-head {
+    display: contents;
+  }
+
+  #view-now .range-nav,
+  #view-now .period-head {
+    order: 1;
+    align-self: flex-start;
+  }
+
+  .table-view {
+    display: none;
+  }
+
   body {
     padding: 0.5rem;
   }
